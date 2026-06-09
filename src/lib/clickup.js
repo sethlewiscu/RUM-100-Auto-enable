@@ -1,8 +1,8 @@
 import { getConfig } from "./config.js";
 
-// Thin wrapper around the ClickUp REST API. The taskCreated webhook only gives
-// us a task_id, so we fetch the full task to read the workspace-ID custom field
-// and figure out which list/space it belongs to.
+// Thin wrapper around the ClickUp REST API. The Automation payload already
+// embeds the full task (including custom_fields), so the only API call we make
+// is posting the result comment back on the task.
 
 async function clickupFetch(path, options = {}) {
   const { clickup } = getConfig();
@@ -22,25 +22,11 @@ async function clickupFetch(path, options = {}) {
   return text ? JSON.parse(text) : {};
 }
 
-export function getTask(taskId) {
-  // include custom fields; ClickUp returns them by default on the task object.
-  return clickupFetch(`/task/${encodeURIComponent(taskId)}`);
-}
-
 export function addComment(taskId, commentText) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}/comment`, {
     method: "POST",
     body: JSON.stringify({ comment_text: commentText, notify_all: false }),
   });
-}
-
-// True if the task belongs to the configured RUM list and/or space. If only one
-// of listId/spaceId is configured, only that one is checked.
-export function taskMatchesFilter(task) {
-  const { filter } = getConfig();
-  const listOk = filter.listId ? String(task?.list?.id) === filter.listId : true;
-  const spaceOk = filter.spaceId ? String(task?.space?.id) === filter.spaceId : true;
-  return listOk && spaceOk;
 }
 
 // Reads the workspace ID(s) from the configured custom field. Matches the field

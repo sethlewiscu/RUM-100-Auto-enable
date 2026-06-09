@@ -1,22 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 
-import { isValidSignature } from "../src/lib/verifySignature.js";
+import { isValidToken } from "../src/lib/verifyToken.js";
 import { extractChangeRequestId } from "../src/lib/split.js";
 
-test("isValidSignature accepts a correct HMAC and rejects a tampered body", () => {
-  const secret = "test-secret";
-  const body = Buffer.from(JSON.stringify({ event: "taskCreated", task_id: "abc" }));
-  const sig = crypto.createHmac("sha256", secret).update(body).digest("hex");
+test("isValidToken accepts a matching token and rejects mismatches", () => {
+  const secret = "super-secret-token";
 
-  assert.equal(isValidSignature(body, sig, secret), true);
-
-  const tampered = Buffer.from(JSON.stringify({ event: "taskCreated", task_id: "xyz" }));
-  assert.equal(isValidSignature(tampered, sig, secret), false);
-
-  assert.equal(isValidSignature(body, "", secret), false);
-  assert.equal(isValidSignature(body, sig, ""), false);
+  assert.equal(isValidToken(secret, secret), true);
+  assert.equal(isValidToken("wrong", secret), false);
+  assert.equal(isValidToken("", secret), false);
+  assert.equal(isValidToken(secret, ""), false);
+  assert.equal(isValidToken(undefined, secret), false);
+  // different lengths must not throw
+  assert.equal(isValidToken("short", "a-much-longer-secret"), false);
 });
 
 test("extractChangeRequestId handles the likely Split response shapes", () => {

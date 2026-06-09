@@ -10,34 +10,35 @@ function setEnv() {
   process.env.SPLIT_ENV_ID = "env";
   process.env.SPLIT_APPROVERS = "a@x.com";
   process.env.CLICKUP_API_TOKEN = "pk_test";
-  process.env.CLICKUP_WEBHOOK_SECRET = "secret";
-  process.env.RUM_LIST_ID = "12345";
-  process.env.WORKSPACE_ID_FIELD = "Workspace ID";
+  process.env.WEBHOOK_AUTH_TOKEN = "secret";
+  process.env.WORKSPACE_ID_FIELD = "Workspace ID [Perf]";
   resetConfig();
 }
 
 beforeEach(setEnv);
 
-test("taskMatchesFilter / extractWorkspaceKeys read list + custom field", async () => {
-  const { taskMatchesFilter, extractWorkspaceKeys } = await import("../src/lib/clickup.js");
+test("extractWorkspaceKeys reads the field from the Automation task payload", async () => {
+  const { extractWorkspaceKeys } = await import("../src/lib/clickup.js");
 
+  // Shape of `payload` inside a ClickUp Automation "Call webhook" body.
   const task = {
-    id: "1vj37mc",
+    id: "868djdyr0",
     name: "Enable 100% RUM",
-    list: { id: "12345" },
     custom_fields: [
-      { id: "f1", name: "Workspace ID", value: "987654" },
-      { id: "f2", name: "Other", value: "ignore" },
+      { id: "f1", name: "Workspace ID [Perf]", type: "text", value: "987654" },
+      { id: "f2", name: "RUM Sampling Enabled?", type: "checkbox", value: "false" },
     ],
   };
 
-  assert.equal(taskMatchesFilter(task), true);
   assert.deepEqual(extractWorkspaceKeys(task), ["987654"]);
 
-  assert.equal(taskMatchesFilter({ ...task, list: { id: "99999" } }), false);
+  // missing / empty field
   assert.deepEqual(extractWorkspaceKeys({ ...task, custom_fields: [] }), []);
 
   // comma-separated multi-value support
-  const multi = { ...task, custom_fields: [{ name: "Workspace ID", value: "1, 2 ,3" }] };
+  const multi = {
+    ...task,
+    custom_fields: [{ name: "Workspace ID [Perf]", value: "1, 2 ,3" }],
+  };
   assert.deepEqual(extractWorkspaceKeys(multi), ["1", "2", "3"]);
 });
