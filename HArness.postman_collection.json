@@ -1,0 +1,226 @@
+{
+  "info": {
+    "_postman_id": "50978754-9701-4e6d-aca9-5c7794dc6546",
+    "name": "HArness",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "23703245"
+  },
+  "item": [
+    {
+      "name": "Segment - Add Key API",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer <REDACTED>\n\n",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"segment\": {\n    \"name\": \"RUM100Perc_Workspaces\",\n    \"keys\": [\"123456\"]\n  },\n  \"operationType\": \"CREATE\",\n  \"title\": \"trying with Harness api\",\n  \"comment\": \"trying with Harness api with Zapier integration\",\n  \"approvers\": [\"slewis@clickup.com\",\"mswarna@clickup.com\"]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.split.io/internal/api/v2/changeRequests/ws/1f03bc00-01f0-11ec-a057-42851e80ca2c/environments/1f08ec20-01f0-11ec-a057-42851e80ca2c",
+          "protocol": "https",
+          "host": [
+            "api",
+            "split",
+            "io"
+          ],
+          "path": [
+            "internal",
+            "api",
+            "v2",
+            "changeRequests",
+            "ws",
+            "1f03bc00-01f0-11ec-a057-42851e80ca2c",
+            "environments",
+            "1f08ec20-01f0-11ec-a057-42851e80ca2c"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Segment - Approve Segment CR",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer <REDACTED>\n",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\":\"APPROVED\",\n  \"comment\":\"CR approved via Admin API\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.split.io/internal/api/v2/changeRequests/32002fe0-2933-11f1-91f6-a244c0509e3e",
+          "protocol": "https",
+          "host": [
+            "api",
+            "split",
+            "io"
+          ],
+          "path": [
+            "internal",
+            "api",
+            "v2",
+            "changeRequests",
+            "32002fe0-2933-11f1-91f6-a244c0509e3e"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Split Flag - Add Key",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer <REDACTED>",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"split\": {\n    \"id\": \"c3512240-9bdf-11ed-a2d4-e211d3acb0d1\",\n    \"name\": \"field-options-limit\",\n    \"environment\": {\n        \"id\": \"1f08ec20-01f0-11ec-a057-42851e80ca2c\",\n        \"name\": \"Prod-Default\"\n    },\n    \"trafficType\": {\n        \"id\": \"a8b69d50-a0ce-11ec-b7ba-e272ce1750ee\",\n        \"name\": \"workspace\"\n    },\n    \"killed\": false,\n    \"treatments\": [\n        {\n            \"name\": \"on\",\n            \"description\": \"\",\n            \"configurations\": \"{ \\\"limit\\\": 500 }\"\n        },\n        {\n            \"name\": \"off\",\n            \"description\": \"\"\n        },\n        {\n            \"name\": \"1000options\",\n            \"description\": \"\",\n            \"keys\": [\n                \"14252883\",\n                \"18317970\",\n                \"2308655\",\n                \"24309812\",\n                \"2478456\",\n                \"2559257\",\n                \"2585517\",\n                \"26487515\",\n                \"3437399\",\n                \"36175916\",\n                \"36602693\",\n                \"45038842\",\n                \"8557982\",\n                \"9005019777\",\n                \"9005082461\",\n                \"9006043620\",\n                \"9006043693\",\n                \"9014709052\",\n                \"123456789\"\n            ],\n            \"configurations\": \"{ \\\"limit\\\": 1000 }\"\n        },\n        {\n            \"name\": \"5000options\",\n            \"description\": \"\",\n            \"keys\": [\n                \"10617282\",\n                \"14203235\",\n                \"14215954\",\n                \"14266422\",\n                \"14334534\",\n                \"14392454\",\n                \"2189485\",\n                \"24414696\",\n                \"2462404\",\n                \"25607135\",\n                \"25740266\",\n                \"2583029\",\n                \"36133683\",\n                \"36264332\",\n                \"36269608\",\n                \"3729683\",\n                \"37424043\",\n                \"43323127\",\n                \"4789778\",\n                \"59531\",\n                \"8419808\",\n                \"8440975\",\n                \"8553292\",\n                \"9002233419\",\n                \"9005048402\",\n                \"9009017580\",\n                \"9010075274\",\n                \"9010079043\",\n                \"9010166283\",\n                \"9012002091\",\n                \"90131588720\",\n                \"9014273037\",\n                \"9014421489\"\n            ],\n            \"configurations\": \"{ \\\"limit\\\": 5000 }\"\n        },\n        {\n            \"name\": \"2000options\",\n            \"description\": \"\",\n            \"keys\": [\n                \"10622142\",\n                \"14389442\",\n                \"36979749\",\n                \"4539234\",\n                \"9011108922\",\n                \"9013057282\",\n                \"9013121276\",\n                \"9013674077\",\n                \"9014334571\",\n                \"9014374874\",\n                \"9014420536\",\n                \"90151342079\",\n                \"90151482017\",\n                \"9017116503\",\n                \"9017221336\"\n            ],\n            \"configurations\": \"{ \\\"limit\\\": 2000 }\"\n        }\n    ],\n    \"defaultTreatment\": \"off\",\n    \"baselineTreatment\": \"off\",\n    \"trafficAllocation\": 100,\n    \"rules\": [],\n    \"defaultRule\": [\n        {\n            \"treatment\": \"on\",\n            \"size\": 100\n        }\n    ],\n    \"creationTime\": 1675345699544,\n    \"lastUpdateTime\": 1776095991519,\n    \"changeNumber\": 1776095991524,\n    \"lastTrafficReceivedAt\": 1776351455724,\n    \"impressionsDisabled\": false\n},\n  \"operationType\": \"UPDATE\",\n  \"title\": \"New rollout split percentage\",\n  \"comment\": \"updated rollout percentage\",\n  \"rolloutStatus\": {\"id\": \"c6640f9e-23c7-4444-88a8-7dd0eedf3d1a\"},\n  \"approvers\": [\"mswarna@clickup.com\"]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.split.io/internal/api/v2/changeRequests/ws/1f03bc00-01f0-11ec-a057-42851e80ca2c/environments/1f08ec20-01f0-11ec-a057-42851e80ca2c",
+          "protocol": "https",
+          "host": [
+            "api",
+            "split",
+            "io"
+          ],
+          "path": [
+            "internal",
+            "api",
+            "v2",
+            "changeRequests",
+            "ws",
+            "1f03bc00-01f0-11ec-a057-42851e80ca2c",
+            "environments",
+            "1f08ec20-01f0-11ec-a057-42851e80ca2c"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Split Flag - Get Flag",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer <REDACTED>",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://api.split.io/internal/api/v2/splits/ws/1f03bc00-01f0-11ec-a057-42851e80ca2c/field-options-limit/environments/1f08ec20-01f0-11ec-a057-42851e80ca2c",
+          "protocol": "https",
+          "host": [
+            "api",
+            "split",
+            "io"
+          ],
+          "path": [
+            "internal",
+            "api",
+            "v2",
+            "splits",
+            "ws",
+            "1f03bc00-01f0-11ec-a057-42851e80ca2c",
+            "field-options-limit",
+            "environments",
+            "1f08ec20-01f0-11ec-a057-42851e80ca2c"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Split Flag - Get Rollout Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer <REDACTED>",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://api.split.io/internal/api/v2/splits/ws/1f03bc00-01f0-11ec-a057-42851e80ca2c/field-options-limit/environments/1f08ec20-01f0-11ec-a057-42851e80ca2c",
+          "protocol": "https",
+          "host": [
+            "api",
+            "split",
+            "io"
+          ],
+          "path": [
+            "internal",
+            "api",
+            "v2",
+            "splits",
+            "ws",
+            "1f03bc00-01f0-11ec-a057-42851e80ca2c",
+            "field-options-limit",
+            "environments",
+            "1f08ec20-01f0-11ec-a057-42851e80ca2c"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
