@@ -15,13 +15,18 @@ ClickUp Automation: Task created (3 source lists)
   → verify shared-secret header (X-Auth-Token)        (else 401)
   → parse Automation payload; read task from `payload`
   → read workspace key from payload.custom_fields ("Workspace ID [Perf]")
+        if empty (snapshot raced ahead of the auto-populated value):
+        wait + GET /task/{id} and re-read, up to WORKSPACE_MAX_RETRIES times
   → POST Split "Add Key" change request                 → CR id
   → PUT  Split "Approve CR" with that id                → APPROVED
   → POST result comment back on the ClickUp task
 ```
 
-The Automation payload embeds the full task inline, so the server does **not**
-call `GET /task` — this avoids the rate-limited webhook path in the internal env.
+The Automation payload embeds the full task inline, so the happy path needs no
+ClickUp API call. The field can be auto-populated a beat after the snapshot is
+taken, so when the inline workspace ID is empty the server re-fetches the task
+(`GET /task/{id}`) a few times — tunable via `WORKSPACE_RETRY_DELAY_MS`
+(default 3000) and `WORKSPACE_MAX_RETRIES` (default 3).
 
 ## Endpoints
 

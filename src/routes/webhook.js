@@ -1,7 +1,7 @@
 import express from "express";
 import { isValidToken } from "../lib/verifyToken.js";
 import { getConfig } from "../lib/config.js";
-import { addComment, extractWorkspaceKeys } from "../lib/clickup.js";
+import { addComment, extractWorkspaceKeys, getTask } from "../lib/clickup.js";
 import { createSegmentKeyCR, approveCR } from "../lib/split.js";
 
 export const router = express.Router();
@@ -35,8 +35,30 @@ function buildCrMetadata(task) {
 
 // Core handler, separated from the route wiring so it can be tested in-process
 // with a mock req/res (and a mocked global fetch).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Resolve the workspace key(s). The Automation snapshot can race ahead of an
+// auto-populated field, so if the inline payload has no key we wait and
+// re-fetch the task from ClickUp a few times before giving up.
+async function resolveWorkspaceKeys(task, taskId, workspace) {
+  let keys = extractWorkspaceKeys(task);
+  for (let i = 0; keys.length === 0 && i < workspace.maxRetries; i++) {
+    await sleep(workspace.retryDelayMs);
+    try {
+      const fresh = await getTask(taskId);
+      keys = extractWorkspaceKeys(fresh);
+      console.log(
+        `[webhook] task ${taskId}: re-fetch attempt ${i + 1}/${workspace.maxRetries} → ${keys.length ? `found ${keys.join(", ")}` : "still empty"}`,
+      );
+    } catch (err) {
+      console.warn(`[webhook] task ${taskId}: re-fetch attempt ${i + 1} failed: ${err.message}`);
+    }
+  }
+  return keys;
+}
+
 export async function handleWebhook(req, res) {
-  const { auth } = getConfig();
+  const { auth, workspace } = getConfig();
   const rawBody = req.body instanceof Buffer ? req.body : Buffer.from("");
 
   if (!isValidToken(req.get(auth.header), auth.token)) {
@@ -63,7 +85,7 @@ export async function handleWebhook(req, res) {
   }
 
   try {
-    const keys = extractWorkspaceKeys(task);
+    const keys = await resolveWorkspaceKeys(task, taskId, workspace);
     if (keys.length === 0) {
       const msg = "❌ RUM auto-approve skipped: no workspace ID found in the configured custom field.";
       console.warn(`[webhook] task ${taskId}: ${msg}`);

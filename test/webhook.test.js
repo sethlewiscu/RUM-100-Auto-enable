@@ -16,6 +16,8 @@ function setEnv() {
   process.env.CLICKUP_BASE_URL = "https://clickup.example/api";
   process.env.WEBHOOK_AUTH_TOKEN = TOKEN;
   process.env.WORKSPACE_ID_FIELD = "Workspace ID [Perf]";
+  process.env.WORKSPACE_RETRY_DELAY_MS = "0"; // instant retries in tests
+  process.env.WORKSPACE_MAX_RETRIES = "3";
   resetConfig();
 }
 
@@ -64,7 +66,8 @@ function mockRes() {
 }
 
 // Records every fetch and returns canned JSON depending on URL/method.
-function installFetchMock() {
+// `refetchTask` is what a GET /task/{id} re-fetch returns (default: empty task).
+function installFetchMock({ refetchTask = {} } = {}) {
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const method = options.method || "GET";
@@ -74,6 +77,7 @@ function installFetchMock() {
     if (url.includes("/changeRequests/ws/")) json = { id: "cr-999" }; // create CR
     else if (url.includes("/changeRequests/")) json = { status: "APPROVED" }; // approve
     else if (url.includes("/comment")) json = { id: "comment-1" }; // clickup comment
+    else if (method === "GET" && url.includes("/task/")) json = refetchTask; // re-fetch
 
     return {
       ok: true,
@@ -104,6 +108,30 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(approve, "should approve the returned CR id");
   assert.ok(comment, "should post a result comment");
   assert.match(JSON.parse(comment.body).comment_text, /APPROVED/);
+});
+
+test("race: inline value empty, re-fetch finds the key, then proceeds", async () => {
+  const refetched = {
+    id: "race-task",
+    name: "Enable RUM",
+    custom_fields: [{ name: "Workspace ID [Perf]", type: "text", value: "777999" }],
+  };
+  const calls = installFetchMock({ refetchTask: refetched });
+  const res = mockRes();
+
+  const body = automationBody("race-task");
+  body.payload.custom_fields = []; // inline empty -> forces a re-fetch
+
+  await handleWebhook(mockReq(body, TOKEN), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.ok, true);
+  assert.deepEqual(res.payload.keys, ["777999"]);
+  assert.ok(
+    calls.some((c) => c.method === "GET" && c.url.includes("/task/race-task")),
+    "should re-fetch the task from ClickUp",
+  );
+  assert.ok(calls.some((c) => c.url.includes("/changeRequests/ws/")), "creates the CR");
 });
 
 test("rejects a request with a wrong token (401, no fetch)", async () => {
