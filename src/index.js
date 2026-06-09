@@ -16,7 +16,8 @@ const app = express();
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
-app.use("/webhooks", webhookRouter);
+// The ClickUp Automation posts to the bare domain, so the handler lives at root.
+app.use("/", webhookRouter);
 
 app.listen(config.port, () => {
   console.log(`[boot] RUM auto-approve server listening on port ${config.port}`);
