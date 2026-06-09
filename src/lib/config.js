@@ -41,7 +41,13 @@ function buildConfig() {
       token: required("WEBHOOK_AUTH_TOKEN"),
       header: optional("WEBHOOK_AUTH_HEADER", "X-Auth-Token"),
     },
-    workspaceIdField: optional("WORKSPACE_ID_FIELD", "Workspace ID [Perf]"),
+    // Custom field holding the workspace ID. Matched by ClickUp field id
+    // (preferred — stable across renames) or, as a fallback, by name.
+    workspaceIdField: optional("WORKSPACE_ID_FIELD", "3ab9bbf1-0dca-4e55-b56e-c04c1f7cf2ac"),
+    // Checkbox custom field that, when checked, re-runs the task (bypassing the
+    // dedupe guard). The server unchecks it after processing. Identified by
+    // ClickUp field id (preferred) or name.
+    rerunField: optional("RERUN_FIELD", "4c9e4cde-23e4-4a18-bef3-fa8f52a29f01"),
     // When the inline payload's workspace-ID field is empty (the Automation
     // snapshot raced ahead of the auto-populated value), wait and re-fetch the
     // task this many times, sleeping retryDelayMs between attempts.

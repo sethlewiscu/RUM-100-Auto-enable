@@ -16,6 +16,7 @@ function setEnv() {
   process.env.CLICKUP_BASE_URL = "https://clickup.example/api";
   process.env.WEBHOOK_AUTH_TOKEN = TOKEN;
   process.env.WORKSPACE_ID_FIELD = "Workspace ID [Perf]";
+  process.env.RERUN_FIELD = "rf1"; // match the rerun field by id (see rerunBody)
   process.env.WORKSPACE_RETRY_DELAY_MS = "0"; // instant retries in tests
   process.env.WORKSPACE_MAX_RETRIES = "3";
   resetConfig();
@@ -41,6 +42,13 @@ function automationBody(taskId = "868djdyr0", wsKey = "555111") {
       ],
     },
   };
+}
+
+// Same body, plus a "Retry RUM" checkbox custom field (re-run trigger).
+function rerunBody(taskId, wsKey, checked) {
+  const b = automationBody(taskId, wsKey);
+  b.payload.custom_fields.push({ id: "rf1", name: "Retry RUM", type: "checkbox", value: checked });
+  return b;
 }
 
 function mockReq(body, token) {
@@ -157,4 +165,33 @@ test("no workspace id -> skip with failure comment, no Split calls", async () =>
   assert.equal(res.payload.ignored, "no workspace id");
   assert.ok(!calls.some((c) => c.url.includes("/changeRequests")), "no Split calls");
   assert.ok(calls.some((c) => c.url.includes("/comment")), "posts a skip comment");
+});
+
+test("re-run (Retry RUM checked): bypasses dedupe and auto-unchecks the box", async () => {
+  const calls = installFetchMock();
+
+  // Two deliveries with the SAME task id; both are re-runs and must both process.
+  await handleWebhook(mockReq(rerunBody("rerun-task", "111", true), TOKEN), mockRes());
+  const res2 = mockRes();
+  await handleWebhook(mockReq(rerunBody("rerun-task", "111", true), TOKEN), res2);
+
+  assert.equal(res2.statusCode, 200);
+  assert.equal(res2.payload.ok, true, "re-run reprocesses even with a repeated task id");
+
+  // Auto-uncheck: POST /task/rerun-task/field/rf1 with value:false on each run.
+  const unchecks = calls.filter(
+    (c) => c.method === "POST" && c.url.includes("/task/rerun-task/field/rf1"),
+  );
+  assert.ok(unchecks.length >= 2, "unchecks Retry RUM after each run");
+  assert.equal(JSON.parse(unchecks[0].body).value, false);
+});
+
+test("dedupe still applies to normal (non-re-run) deliveries", async () => {
+  installFetchMock();
+
+  await handleWebhook(mockReq(automationBody("dup-task", "222"), TOKEN), mockRes());
+  const res2 = mockRes();
+  await handleWebhook(mockReq(automationBody("dup-task", "222"), TOKEN), res2);
+
+  assert.equal(res2.payload.ignored, "duplicate");
 });

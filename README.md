@@ -42,9 +42,15 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
    - `WEBHOOK_AUTH_TOKEN` — shared secret; must match the header the Automation sends.
-   - `WORKSPACE_ID_FIELD` — defaults to `Workspace ID [Perf]`.
+   - `WORKSPACE_ID_FIELD` — workspace-ID custom field, by **field id** (preferred,
+     stable across renames) or name.
    - `WORKSPACE_RETRY_DELAY_MS` / `WORKSPACE_MAX_RETRIES` — optional re-fetch
      tuning (defaults `3000` / `3`).
+   - `RERUN_FIELD` — "Retry RUM" checkbox field, by **field id** (preferred) or
+     name.
+
+Custom fields are matched by ClickUp **field id** first, then name — prefer ids
+since a field can be renamed without changing its id.
 2. `npm install`
 3. Run:
    - Local: `node --env-file=.env src/index.js`
@@ -59,6 +65,19 @@ In the source space, create an Automation:
   **header** `X-Auth-Token: <WEBHOOK_AUTH_TOKEN>` (same value as the secret).
 
 The server rejects any request whose `X-Auth-Token` header doesn't match.
+
+## Re-running a failed request
+
+To retry a task that failed (e.g. after fixing config) without creating a new
+task, use a checkbox field + a second Automation:
+
+- Add a checkbox custom field named **`Retry RUM`** (configurable via `RERUN_FIELD`).
+- New Automation: **Trigger** = `Retry RUM` is set to *checked*; **Action** = Call
+  webhook → the **same** URL `/` with the `X-Auth-Token` header.
+
+When that fires, the server re-reads the live task and reprocesses it, **bypassing
+the dedupe guard**, then **auto-unchecks** `Retry RUM` so it can be toggled again.
+No payload is stored — the live ClickUp task is re-sent on demand.
 
 ## Tests
 
