@@ -35,13 +35,16 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
 
 ## Setup
 
-1. Copy `.env.example` and fill in values (on Replit, add them as **Secrets**):
-   - `SPLIT_API_TOKEN` — **rotate** the token that leaked in the Postman file.
+1. Configure these variables — on Replit add them as **Secrets**; locally put
+   them in a gitignored `.env`:
+   - `SPLIT_API_TOKEN` — Split Admin API bearer token.
    - `SPLIT_WS_ID`, `SPLIT_ENV_ID`, `SPLIT_SEGMENT_NAME`, `SPLIT_APPROVERS`.
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
    - `WEBHOOK_AUTH_TOKEN` — shared secret; must match the header the Automation sends.
    - `WORKSPACE_ID_FIELD` — defaults to `Workspace ID [Perf]`.
+   - `WORKSPACE_RETRY_DELAY_MS` / `WORKSPACE_MAX_RETRIES` — optional re-fetch
+     tuning (defaults `3000` / `3`).
 2. `npm install`
 3. Run:
    - Local: `node --env-file=.env src/index.js`
