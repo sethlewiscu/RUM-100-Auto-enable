@@ -1,7 +1,13 @@
 import express from "express";
 import { isValidToken } from "../lib/verifyToken.js";
 import { getConfig } from "../lib/config.js";
-import { addComment, extractWorkspaceKeys, getTask } from "../lib/clickup.js";
+import {
+  addComment,
+  extractWorkspaceKeys,
+  getTask,
+  getCheckboxField,
+  setCustomField,
+} from "../lib/clickup.js";
 import { createSegmentKeyCR, approveCR } from "../lib/split.js";
 
 export const router = express.Router();
@@ -58,7 +64,7 @@ async function resolveWorkspaceKeys(task, taskId, workspace) {
 }
 
 export async function handleWebhook(req, res) {
-  const { auth, workspace } = getConfig();
+  const { auth, workspace, rerunField } = getConfig();
   const rawBody = req.body instanceof Buffer ? req.body : Buffer.from("");
 
   if (!isValidToken(req.get(auth.header), auth.token)) {
@@ -78,38 +84,55 @@ export async function handleWebhook(req, res) {
   const taskId = task?.id;
   if (!taskId) return res.status(200).json({ ignored: "no task in payload" });
 
-  const now = Date.now();
-  if (alreadyProcessed(taskId, now)) {
+  // A checked "Retry RUM" field means a deliberate re-run: bypass the dedupe
+  // guard so an immediate retry after a failure isn't swallowed.
+  const rerun = getCheckboxField(task, rerunField);
+  const isRerun = !!rerun?.checked;
+
+  if (!isRerun && alreadyProcessed(taskId, Date.now())) {
     console.log(`[webhook] duplicate delivery for task ${taskId}, skipping`);
     return res.status(200).json({ ignored: "duplicate" });
   }
+  if (isRerun) console.log(`[webhook] re-run requested for task ${taskId}`);
 
+  // Compute a single result, then (for re-runs) reset the checkbox BEFORE
+  // responding — Cloud Run can freeze CPU once the response is sent.
+  let result;
   try {
     const keys = await resolveWorkspaceKeys(task, taskId, workspace);
     if (keys.length === 0) {
       const msg = "❌ RUM auto-approve skipped: no workspace ID found in the configured custom field.";
       console.warn(`[webhook] task ${taskId}: ${msg}`);
       await safeComment(taskId, msg);
-      return res.status(200).json({ ignored: "no workspace id" });
+      result = { code: 200, body: { ignored: "no workspace id" } };
+    } else {
+      const meta = buildCrMetadata(task);
+      const { crId } = await createSegmentKeyCR(keys, meta);
+      await approveCR(crId);
+
+      const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment. Change request ${crId} APPROVED.`;
+      console.log(`[webhook] task ${taskId}: ${ok}`);
+      await safeComment(taskId, ok);
+      result = { code: 200, body: { ok: true, crId, keys } };
     }
-
-    const meta = buildCrMetadata(task);
-    const { crId } = await createSegmentKeyCR(keys, meta);
-    await approveCR(crId);
-
-    const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment. Change request ${crId} APPROVED.`;
-    console.log(`[webhook] task ${taskId}: ${ok}`);
-    await safeComment(taskId, ok);
-
-    return res.status(200).json({ ok: true, crId, keys });
   } catch (err) {
-    // Action already attempted — record failure on the task and ack so we don't
-    // loop on retries.
+    // Action already attempted — record failure on the task and ack (always 200)
+    // so the Automation doesn't retry.
     const msg = `❌ RUM auto-approve failed: ${err.message}`;
     console.error(`[webhook] task ${taskId}: ${msg}`);
     await safeComment(taskId, msg);
-    return res.status(200).json({ ok: false, error: err.message });
+    result = { code: 200, body: { ok: false, error: err.message } };
   }
+
+  if (isRerun && rerun.id) {
+    try {
+      await setCustomField(taskId, rerun.id, false);
+    } catch (err) {
+      console.error(`[webhook] failed to reset ${rerunField} on task ${taskId}: ${err.message}`);
+    }
+  }
+
+  return res.status(result.code).json(result.body);
 }
 
 // `express.raw` gives us the exact bytes; the handler parses JSON itself.

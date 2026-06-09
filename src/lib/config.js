@@ -42,6 +42,9 @@ function buildConfig() {
       header: optional("WEBHOOK_AUTH_HEADER", "X-Auth-Token"),
     },
     workspaceIdField: optional("WORKSPACE_ID_FIELD", "Workspace ID [Perf]"),
+    // Checkbox custom field that, when checked, re-runs the task (bypassing the
+    // dedupe guard). The server unchecks it after processing.
+    rerunField: optional("RERUN_FIELD", "Retry RUM"),
     // When the inline payload's workspace-ID field is empty (the Automation
     // snapshot raced ahead of the auto-populated value), wait and re-fetch the
     // task this many times, sleeping retryDelayMs between attempts.

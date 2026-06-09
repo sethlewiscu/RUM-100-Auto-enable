@@ -36,6 +36,30 @@ export function addComment(taskId, commentText) {
   });
 }
 
+// Set a custom field value on a task. For a checkbox, pass a boolean.
+export function setCustomField(taskId, fieldId, value) {
+  return clickupFetch(
+    `/task/${encodeURIComponent(taskId)}/field/${encodeURIComponent(fieldId)}`,
+    { method: "POST", body: JSON.stringify({ value }) },
+  );
+}
+
+// Find a custom field by id OR (case-insensitive) name and report whether it's
+// a checked checkbox. Returns { id, checked } or null when the field is absent.
+export function getCheckboxField(task, nameOrId) {
+  const fields = Array.isArray(task?.custom_fields) ? task.custom_fields : [];
+  const field = fields.find(
+    (f) =>
+      String(f.id) === nameOrId ||
+      String(f.name || "").toLowerCase() === String(nameOrId).toLowerCase(),
+  );
+  if (!field) return null;
+
+  const v = field.value;
+  const checked = v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+  return { id: field.id, checked };
+}
+
 // Reads the workspace ID(s) from the configured custom field. Matches the field
 // by id OR (case-insensitive) name. Returns an array of non-empty string keys.
 export function extractWorkspaceKeys(task) {
