@@ -1,49 +1,56 @@
 # RUM Auto-Approve Server
 
 Replaces the Zapier automation that requests and auto-approves "100% RUM" for
-ClickUp workspaces. A ClickUp `taskCreated` webhook hits this server, which adds
-the workspace key to the **`RUM100Perc_Workspaces`** segment in Split.io
-(Harness) and approves the resulting change request.
+ClickUp workspaces. A ClickUp **Automation** ("Call webhook" action) posts to
+this server, which adds the workspace key to the **`RUM100Perc_Workspaces`**
+segment in Split.io (Harness) and approves the resulting change request.
 
 ## Flow
 
 ```
-ClickUp taskCreated webhook
-  → POST /webhooks/clickup
-  → verify X-Signature (HMAC-SHA256 of raw body w/ webhook secret)
-  → GET ClickUp task by task_id
-  → filter: only tasks in RUM_LIST_ID / RUM_SPACE_ID    (else 200 + ignore)
-  → read workspace ID from the WORKSPACE_ID_FIELD custom field
+ClickUp Automation: Task created (3 source lists)
+  + condition: "RUM Sampling Enabled?" is Unchecked
+  + condition: "Workspace ID [Perf]" is set
+  → "Call webhook" action → POST /
+  → verify shared-secret header (X-Auth-Token)        (else 401)
+  → parse Automation payload; read task from `payload`
+  → read workspace key from payload.custom_fields ("Workspace ID [Perf]")
   → POST Split "Add Key" change request                 → CR id
   → PUT  Split "Approve CR" with that id                → APPROVED
   → POST result comment back on the ClickUp task
 ```
 
+The Automation payload embeds the full task inline, so the server does **not**
+call `GET /task` — this avoids the rate-limited webhook path in the internal env.
+
 ## Endpoints
 
 - `GET /health` — liveness check.
-- `POST /webhooks/clickup` — ClickUp webhook receiver.
+- `POST /` — ClickUp Automation "Call webhook" receiver.
 
 ## Setup
 
 1. Copy `.env.example` and fill in values (on Replit, add them as **Secrets**):
    - `SPLIT_API_TOKEN` — **rotate** the token that leaked in the Postman file.
    - `SPLIT_WS_ID`, `SPLIT_ENV_ID`, `SPLIT_SEGMENT_NAME`, `SPLIT_APPROVERS`.
-   - `CLICKUP_API_TOKEN`, `CLICKUP_WEBHOOK_SECRET`.
-   - `RUM_LIST_ID` and/or `RUM_SPACE_ID` (at least one).
-   - `WORKSPACE_ID_FIELD` — the custom field id or name holding the workspace ID.
+   - `CLICKUP_API_TOKEN` — to post the result comment.
+   - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
+   - `WEBHOOK_AUTH_TOKEN` — shared secret; must match the header the Automation sends.
+   - `WORKSPACE_ID_FIELD` — defaults to `Workspace ID [Perf]`.
 2. `npm install`
 3. Run:
    - Local: `node --env-file=.env src/index.js`
    - Replit: `npm start` (Secrets are injected automatically).
 
-## ClickUp webhook
+## ClickUp Automation
 
-Create the webhook (Postman or the ClickUp API) pointing at
-`https://<your-replit-url>/webhooks/clickup`, subscribed to `taskCreated`, with
-the same secret you put in `CLICKUP_WEBHOOK_SECRET`. ClickUp signs each delivery
-with `X-Signature` (HMAC-SHA256 over the raw body); this server rejects requests
-that don't match.
+In the source space, create an Automation:
+- **Trigger:** Task created (select the source lists).
+- **Conditions:** `RUM Sampling Enabled?` is Unchecked **and** `Workspace ID [Perf]` is set.
+- **Action:** Call webhook → URL `https://<your-replit-url>/` and add a custom
+  **header** `X-Auth-Token: <WEBHOOK_AUTH_TOKEN>` (same value as the secret).
+
+The server rejects any request whose `X-Auth-Token` header doesn't match.
 
 ## Tests
 
@@ -51,15 +58,14 @@ that don't match.
 npm test
 ```
 
-Covers signature verification, the Split CR-id extractor, and the ClickUp
-list-filter / custom-field parsing using shapes from `task-payload-example.json`.
+Covers token auth (accept/reject), the Split CR-id extractor, workspace-key
+extraction from the Automation payload, and an in-process integration test of the
+full handler with mocked ClickUp + Split calls.
 
 ## Items to confirm during the first live run
 
 - Exact **CR id field name** in the Split "Add Key" response — `src/lib/split.js`
   `extractChangeRequestId()` checks the likely shapes; adjust if needed.
-- The **custom field** id/name and the **list/space** id.
 - Split's self-approval rule: the approving token must belong to a different
   Split user than the `approvers`, or the approve call may 403. The error is
   surfaced in logs and the ClickUp comment.
-```

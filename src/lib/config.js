@@ -30,22 +30,21 @@ function buildConfig() {
     },
     clickup: {
       apiToken: required("CLICKUP_API_TOKEN"),
-      webhookSecret: required("CLICKUP_WEBHOOK_SECRET"),
-      baseUrl: optional("CLICKUP_BASE_URL", "https://api.clickup.com/api/v2"),
+      // Defaults to ClickUp staging; set CLICKUP_BASE_URL to the prod API
+      // (https://api.clickup.com/api/v2) when pointing at production.
+      baseUrl: optional("CLICKUP_BASE_URL", "https://api.clickup-stg.com/api/v2"),
     },
-    filter: {
-      listId: optional("RUM_LIST_ID"),
-      spaceId: optional("RUM_SPACE_ID"),
+    // Inbound auth for the ClickUp Automation "Call webhook" action. The
+    // Automation sends a shared secret in a custom header (no HMAC signature),
+    // which we compare in constant time.
+    auth: {
+      token: required("WEBHOOK_AUTH_TOKEN"),
+      header: optional("WEBHOOK_AUTH_HEADER", "X-Auth-Token"),
     },
-    workspaceIdField: required("WORKSPACE_ID_FIELD"),
+    workspaceIdField: optional("WORKSPACE_ID_FIELD", "Workspace ID [Perf]"),
     port: Number(optional("PORT", "3000")),
   };
 
-  if (!config.filter.listId && !config.filter.spaceId) {
-    throw new Error(
-      "Set at least one of RUM_LIST_ID or RUM_SPACE_ID to scope which tasks trigger the flow.",
-    );
-  }
   if (config.split.approvers.length === 0) {
     throw new Error("SPLIT_APPROVERS must contain at least one email.");
   }
