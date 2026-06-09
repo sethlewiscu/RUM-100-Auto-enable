@@ -19,6 +19,10 @@ function buildConfig() {
   const config = {
     split: {
       apiToken: required("SPLIT_API_TOKEN"),
+      // Harness FME blocks the key that creates a change request from approving
+      // it — approval must use a different Admin API key that is registered as an
+      // approver on the environment. Used only for the approve PUT.
+      approveToken: optional("SPLIT_APPROVE_TOKEN", ""),
       wsId: required("SPLIT_WS_ID"),
       envId: required("SPLIT_ENV_ID"),
       segmentName: optional("SPLIT_SEGMENT_NAME", "RUM100Perc_Workspaces"),
@@ -60,6 +64,11 @@ function buildConfig() {
 
   if (config.split.approvers.length === 0) {
     throw new Error("SPLIT_APPROVERS must contain at least one email.");
+  }
+  if (!config.split.approveToken || config.split.approveToken === config.split.apiToken) {
+    console.warn(
+      "[config] SPLIT_APPROVE_TOKEN is unset or equal to SPLIT_API_TOKEN — change-request approval will 401. Set a distinct Admin API key registered as an approver.",
+    );
   }
 
   return config;

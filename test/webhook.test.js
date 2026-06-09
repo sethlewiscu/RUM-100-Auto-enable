@@ -11,6 +11,7 @@ function setEnv() {
   process.env.SPLIT_WS_ID = "ws-1";
   process.env.SPLIT_ENV_ID = "env-1";
   process.env.SPLIT_APPROVERS = "a@x.com";
+  process.env.SPLIT_APPROVE_TOKEN = "sat.approve";
   process.env.SPLIT_BASE_URL = "https://split.example/api";
   process.env.CLICKUP_API_TOKEN = "pk_test";
   process.env.CLICKUP_BASE_URL = "https://clickup.example/api";
@@ -116,6 +117,10 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(approve, "should approve the returned CR id");
   assert.ok(comment, "should post a result comment");
   assert.match(JSON.parse(comment.body).comment_text, /APPROVED/);
+
+  // Create uses SPLIT_API_TOKEN; approve uses the distinct SPLIT_APPROVE_TOKEN.
+  assert.equal(create.headers.Authorization, "Bearer sat.test");
+  assert.equal(approve.headers.Authorization, "Bearer sat.approve");
 });
 
 test("race: inline value empty, re-fetch finds the key, then proceeds", async () => {
