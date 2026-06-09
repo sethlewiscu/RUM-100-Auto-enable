@@ -42,6 +42,13 @@ function buildConfig() {
       header: optional("WEBHOOK_AUTH_HEADER", "X-Auth-Token"),
     },
     workspaceIdField: optional("WORKSPACE_ID_FIELD", "Workspace ID [Perf]"),
+    // When the inline payload's workspace-ID field is empty (the Automation
+    // snapshot raced ahead of the auto-populated value), wait and re-fetch the
+    // task this many times, sleeping retryDelayMs between attempts.
+    workspace: {
+      retryDelayMs: Number(optional("WORKSPACE_RETRY_DELAY_MS", "3000")),
+      maxRetries: Number(optional("WORKSPACE_MAX_RETRIES", "3")),
+    },
     port: Number(optional("PORT", "3000")),
   };
 

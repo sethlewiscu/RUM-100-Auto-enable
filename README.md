@@ -15,13 +15,18 @@ ClickUp Automation: Task created (3 source lists)
   → verify shared-secret header (X-Auth-Token)        (else 401)
   → parse Automation payload; read task from `payload`
   → read workspace key from payload.custom_fields ("Workspace ID [Perf]")
+        if empty (snapshot raced ahead of the auto-populated value):
+        wait + GET /task/{id} and re-read, up to WORKSPACE_MAX_RETRIES times
   → POST Split "Add Key" change request                 → CR id
   → PUT  Split "Approve CR" with that id                → APPROVED
   → POST result comment back on the ClickUp task
 ```
 
-The Automation payload embeds the full task inline, so the server does **not**
-call `GET /task` — this avoids the rate-limited webhook path in the internal env.
+The Automation payload embeds the full task inline, so the happy path needs no
+ClickUp API call. The field can be auto-populated a beat after the snapshot is
+taken, so when the inline workspace ID is empty the server re-fetches the task
+(`GET /task/{id}`) a few times — tunable via `WORKSPACE_RETRY_DELAY_MS`
+(default 3000) and `WORKSPACE_MAX_RETRIES` (default 3).
 
 ## Endpoints
 
@@ -30,13 +35,16 @@ call `GET /task` — this avoids the rate-limited webhook path in the internal e
 
 ## Setup
 
-1. Copy `.env.example` and fill in values (on Replit, add them as **Secrets**):
-   - `SPLIT_API_TOKEN` — **rotate** the token that leaked in the Postman file.
+1. Configure these variables — on Replit add them as **Secrets**; locally put
+   them in a gitignored `.env`:
+   - `SPLIT_API_TOKEN` — Split Admin API bearer token.
    - `SPLIT_WS_ID`, `SPLIT_ENV_ID`, `SPLIT_SEGMENT_NAME`, `SPLIT_APPROVERS`.
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
    - `WEBHOOK_AUTH_TOKEN` — shared secret; must match the header the Automation sends.
    - `WORKSPACE_ID_FIELD` — defaults to `Workspace ID [Perf]`.
+   - `WORKSPACE_RETRY_DELAY_MS` / `WORKSPACE_MAX_RETRIES` — optional re-fetch
+     tuning (defaults `3000` / `3`).
 2. `npm install`
 3. Run:
    - Local: `node --env-file=.env src/index.js`

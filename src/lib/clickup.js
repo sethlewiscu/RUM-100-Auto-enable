@@ -1,8 +1,9 @@
 import { getConfig } from "./config.js";
 
-// Thin wrapper around the ClickUp REST API. The Automation payload already
-// embeds the full task (including custom_fields), so the only API call we make
-// is posting the result comment back on the task.
+// Thin wrapper around the ClickUp REST API. The Automation payload embeds the
+// task inline, but its snapshot can be captured before an auto-populated field
+// settles — so we re-fetch the task (getTask) to read the settled value, and
+// post the result comment back on the task.
 
 async function clickupFetch(path, options = {}) {
   const { clickup } = getConfig();
@@ -20,6 +21,12 @@ async function clickupFetch(path, options = {}) {
     throw new Error(`ClickUp ${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
   }
   return text ? JSON.parse(text) : {};
+}
+
+// Fetch the full task; custom_fields are included on the task object. Used to
+// re-read the workspace-ID field when the inline payload snapshot was empty.
+export function getTask(taskId) {
+  return clickupFetch(`/task/${encodeURIComponent(taskId)}`);
 }
 
 export function addComment(taskId, commentText) {
