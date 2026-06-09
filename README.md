@@ -37,7 +37,10 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
 
 1. Configure these variables — on Replit add them as **Secrets**; locally put
    them in a gitignored `.env`:
-   - `SPLIT_API_TOKEN` — Split Admin API bearer token.
+   - `SPLIT_API_TOKEN` — Harness FME (Split) Admin API key used to **create** the CR.
+   - `SPLIT_APPROVE_TOKEN` — a **second** Admin API key used to **approve** the CR.
+     FME blocks the creating key from approving, so this must be a *different* key
+     that is registered as an approver on the environment (see below).
    - `SPLIT_WS_ID`, `SPLIT_ENV_ID`, `SPLIT_SEGMENT_NAME`, `SPLIT_APPROVERS`.
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
@@ -65,6 +68,22 @@ In the source space, create an Automation:
   **header** `X-Auth-Token: <WEBHOOK_AUTH_TOKEN>` (same value as the secret).
 
 The server rejects any request whose `X-Auth-Token` header doesn't match.
+
+## Approval (two Admin API keys)
+
+Harness FME does not allow the key that **submits** a change request to also
+**approve** it. So the service uses two keys: `SPLIT_API_TOKEN` creates the CR and
+`SPLIT_APPROVE_TOKEN` approves it. To make the approve key work:
+
+1. Create a second Admin API key (distinct from `SPLIT_API_TOKEN`).
+2. In the environment's **Require approval for changes** settings, choose
+   **Restrict who can approve** and add that key as an approver. (Under *Let
+   submitters choose their own approvers*, API approval isn't possible — a human
+   must approve.)
+3. Set it as `SPLIT_APPROVE_TOKEN`. If it's unset or equals `SPLIT_API_TOKEN`,
+   the approve step returns 401 (and the server logs a warning at boot).
+
+See [FME approval flows](https://developer.harness.io/docs/feature-management-experimentation/api/approvals/).
 
 ## Re-running a failed request
 
