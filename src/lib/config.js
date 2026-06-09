@@ -31,7 +31,9 @@ function buildConfig() {
     clickup: {
       apiToken: required("CLICKUP_API_TOKEN"),
       webhookSecret: required("CLICKUP_WEBHOOK_SECRET"),
-      baseUrl: optional("CLICKUP_BASE_URL", "https://api.clickup.com/api/v2"),
+      // Defaults to ClickUp staging; set CLICKUP_BASE_URL to the prod API
+      // (https://api.clickup.com/api/v2) when pointing at production.
+      baseUrl: optional("CLICKUP_BASE_URL", "https://api.clickup-stg.com/api/v2"),
     },
     filter: {
       listId: optional("RUM_LIST_ID"),
