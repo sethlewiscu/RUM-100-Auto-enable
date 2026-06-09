@@ -16,6 +16,7 @@ function setEnv() {
   process.env.CLICKUP_BASE_URL = "https://clickup.example/api";
   process.env.WEBHOOK_AUTH_TOKEN = TOKEN;
   process.env.WORKSPACE_ID_FIELD = "Workspace ID [Perf]";
+  process.env.RERUN_FIELD = "rf1"; // match the rerun field by id (see rerunBody)
   process.env.WORKSPACE_RETRY_DELAY_MS = "0"; // instant retries in tests
   process.env.WORKSPACE_MAX_RETRIES = "3";
   resetConfig();

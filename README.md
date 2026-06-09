@@ -42,10 +42,15 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
    - `WEBHOOK_AUTH_TOKEN` — shared secret; must match the header the Automation sends.
-   - `WORKSPACE_ID_FIELD` — defaults to `Workspace ID [Perf]`.
+   - `WORKSPACE_ID_FIELD` — workspace-ID custom field, by **field id** (preferred,
+     stable across renames) or name.
    - `WORKSPACE_RETRY_DELAY_MS` / `WORKSPACE_MAX_RETRIES` — optional re-fetch
      tuning (defaults `3000` / `3`).
-   - `RERUN_FIELD` — checkbox field that re-runs the task (default `Retry RUM`).
+   - `RERUN_FIELD` — "Retry RUM" checkbox field, by **field id** (preferred) or
+     name.
+
+Custom fields are matched by ClickUp **field id** first, then name — prefer ids
+since a field can be renamed without changing its id.
 2. `npm install`
 3. Run:
    - Local: `node --env-file=.env src/index.js`
