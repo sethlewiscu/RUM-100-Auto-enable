@@ -8,7 +8,13 @@ import {
   getCheckboxField,
   setCustomField,
 } from "../lib/clickup.js";
-import { createSegmentKeyCR, approveCR } from "../lib/split.js";
+import {
+  createSegmentKeyCR,
+  approveCR,
+  getChangeRequest,
+  parsePendingCrId,
+  extractCrKeys,
+} from "../lib/split.js";
 
 export const router = express.Router();
 
@@ -98,8 +104,9 @@ export async function handleWebhook(req, res) {
   // Compute a single result, then (for re-runs) reset the checkbox BEFORE
   // responding — Cloud Run can freeze CPU once the response is sent.
   let result;
+  let keys = [];
   try {
-    const keys = await resolveWorkspaceKeys(task, taskId, workspace);
+    keys = await resolveWorkspaceKeys(task, taskId, workspace);
     if (keys.length === 0) {
       const msg = "❌ RUM auto-approve skipped: no workspace ID found in the configured custom field.";
       console.warn(`[webhook] task ${taskId}: ${msg}`);
@@ -116,12 +123,17 @@ export async function handleWebhook(req, res) {
       result = { code: 200, body: { ok: true, crId, keys } };
     }
   } catch (err) {
-    // Action already attempted — record failure on the task and ack (always 200)
-    // so the Automation doesn't retry.
-    const msg = `❌ RUM auto-approve failed: ${err.message}`;
-    console.error(`[webhook] task ${taskId}: ${msg}`);
-    await safeComment(taskId, msg);
-    result = { code: 200, body: { ok: false, error: err.message } };
+    if (err.status === 423) {
+      // The segment already has a pending change request (expected lock).
+      result = await handlePendingConflict(taskId, keys, err);
+    } else {
+      // Action already attempted — record failure on the task and ack (always
+      // 200) so the Automation doesn't retry.
+      const msg = `❌ RUM auto-approve failed: ${err.message}`;
+      console.error(`[webhook] task ${taskId}: ${msg}`);
+      await safeComment(taskId, msg);
+      result = { code: 200, body: { ok: false, error: err.message } };
+    }
   }
 
   if (isRerun && rerun.id) {
@@ -137,6 +149,51 @@ export async function handleWebhook(req, res) {
 
 // `express.raw` gives us the exact bytes; the handler parses JSON itself.
 router.post("/", express.raw({ type: "*/*" }), handleWebhook);
+
+// FME locks the segment while a change request is pending, so create returns 423.
+// Surface a trail comment, then approve the pending CR. If it's for the same
+// workspace, that completes this task; if it's a different workspace, approving
+// unblocks the queue and the user re-checks "Retry RUM" to process this task.
+async function handlePendingConflict(taskId, keys, err) {
+  const pendingId = parsePendingCrId(err.body);
+  if (!pendingId) {
+    const msg =
+      'ℹ️ A pending RUM request already exists for this segment. Please approve it, then re-check "Retry RUM" to retry this task.';
+    console.warn(`[webhook] task ${taskId}: 423 but no pending id parsed`);
+    await safeComment(taskId, msg);
+    return { code: 200, body: { handled: "pending", pendingId: null } };
+  }
+
+  let sameWorkspace = false;
+  try {
+    const pendingCr = await getChangeRequest(pendingId);
+    const pendingKeys = extractCrKeys(pendingCr);
+    sameWorkspace = keys.some((k) => pendingKeys.includes(k));
+  } catch (e) {
+    console.warn(`[webhook] task ${taskId}: could not read pending CR ${pendingId}: ${e.message}`);
+  }
+
+  const trail = sameWorkspace
+    ? `ℹ️ A pending RUM request for this Workspace already exists (change request ${pendingId}). Approving it now.`
+    : `ℹ️ A pending RUM request for another Workspace is already in progress (change request ${pendingId}). Approving it to unblock the queue — re-check "Retry RUM" to process this request.`;
+  console.log(`[webhook] task ${taskId}: ${trail}`);
+  await safeComment(taskId, trail);
+
+  try {
+    await approveCR(pendingId);
+    const ok = sameWorkspace
+      ? `✅ RUM 100% approved for this Workspace. Change request ${pendingId} APPROVED.`
+      : `✅ Approved the blocking change request ${pendingId}. Re-check "Retry RUM" on this task to process this Workspace.`;
+    console.log(`[webhook] task ${taskId}: ${ok}`);
+    await safeComment(taskId, ok);
+    return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
+  } catch (e) {
+    const msg = `❌ Found pending change request ${pendingId} but failed to approve it: ${e.message}`;
+    console.error(`[webhook] task ${taskId}: ${msg}`);
+    await safeComment(taskId, msg);
+    return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: false } };
+  }
+}
 
 async function safeComment(taskId, text) {
   try {

@@ -18,9 +18,35 @@ async function splitFetch(path, options = {}, token) {
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Split ${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    const err = new Error(`Split ${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    err.status = res.status;
+    try {
+      err.body = text ? JSON.parse(text) : null;
+    } catch {
+      err.body = null;
+    }
+    throw err;
   }
   return text ? JSON.parse(text) : {};
+}
+
+// Fetch a single change request (includes segment.keys and status).
+export function getChangeRequest(crId) {
+  return splitFetch(`/changeRequests/${encodeURIComponent(crId)}`);
+}
+
+// Pull the pending change request id out of a 423 error body. The FME message is
+// e.g. "A pending change request with id:7f69afb0-… for this object already exists".
+export function parsePendingCrId(errBody) {
+  const details = errBody && typeof errBody === "object" ? errBody.details : "";
+  const m = /id:\s*([0-9a-f-]+)/i.exec(String(details || ""));
+  return m ? m[1] : null;
+}
+
+// The workspace key(s) carried by a change request's segment change.
+export function extractCrKeys(cr) {
+  const keys = cr?.segment?.keys;
+  return Array.isArray(keys) ? keys.map((k) => String(k).trim()).filter(Boolean) : [];
 }
 
 // Creates a change request that adds the given workspace keys to the RUM

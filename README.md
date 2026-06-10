@@ -85,6 +85,16 @@ Harness FME does not allow the key that **submits** a change request to also
 
 See [FME approval flows](https://developer.harness.io/docs/feature-management-experimentation/api/approvals/).
 
+### Pending change request (423)
+
+FME locks the **segment** while any change request on it is pending, so a new
+create returns `423`. The server handles this instead of failing: it reads the
+pending CR, posts a trail comment, and **approves** that pending CR.
+- **Same workspace** as the task → that CR *is* this request, so approving it
+  completes the task.
+- **Different workspace** → approving it unblocks the queue; re-check **Retry
+  RUM** on this task to process it once the lock clears.
+
 ## Re-running a failed request
 
 To retry a task that failed (e.g. after fixing config) without creating a new
