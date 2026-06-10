@@ -74,25 +74,43 @@ function mockRes() {
   };
 }
 
+const PENDING_ID = "7f69afb0-6450-11f1-8874-a2ae3133ca1f";
+
 // Records every fetch and returns canned JSON depending on URL/method.
-// `refetchTask` is what a GET /task/{id} re-fetch returns (default: empty task).
-function installFetchMock({ refetchTask = {} } = {}) {
+// Options:
+//   refetchTask  – what a GET /task/{id} re-fetch returns (default empty task)
+//   createStatus – HTTP status for the create POST (use 423 to simulate a lock)
+//   pendingCr    – CR returned by GET /changeRequests/{id}
+//   pendingId    – id embedded in the 423 "details" message
+function installFetchMock({ refetchTask = {}, createStatus = 200, pendingCr = null, pendingId = PENDING_ID } = {}) {
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const method = options.method || "GET";
     calls.push({ url, method, body: options.body, headers: options.headers });
+    const ok = (json, status = 200) => ({ ok: true, status, text: async () => JSON.stringify(json) });
 
-    let json = {};
-    if (url.includes("/changeRequests/ws/")) json = { id: "cr-999" }; // create CR
-    else if (url.includes("/changeRequests/")) json = { status: "APPROVED" }; // approve
-    else if (url.includes("/comment")) json = { id: "comment-1" }; // clickup comment
-    else if (method === "GET" && url.includes("/task/")) json = refetchTask; // re-fetch
+    // Split: create change request (POST .../changeRequests/ws/...)
+    if (url.includes("/changeRequests/ws/")) {
+      if (createStatus !== 200) {
+        const body = JSON.stringify({
+          code: createStatus,
+          message: "Something was wrong",
+          details: `A pending change request with id:${pendingId} for this object already exists`,
+        });
+        return { ok: false, status: createStatus, text: async () => body };
+      }
+      return ok({ id: "cr-999" });
+    }
 
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify(json),
-    };
+    // Split: GET a specific CR, or PUT to approve it (.../changeRequests/{id})
+    if (url.includes("/changeRequests/")) {
+      return method === "GET" ? ok(pendingCr || {}) : ok({ status: "APPROVED" });
+    }
+
+    if (url.includes("/comment")) return ok({ id: "comment-1" }); // clickup comment
+    if (method === "GET" && url.includes("/task/")) return ok(refetchTask); // re-fetch
+
+    return ok({});
   };
   return calls;
 }
@@ -199,4 +217,55 @@ test("dedupe still applies to normal (non-re-run) deliveries", async () => {
   await handleWebhook(mockReq(automationBody("dup-task", "222"), TOKEN), res2);
 
   assert.equal(res2.payload.ignored, "duplicate");
+});
+
+test("423 pending CR for SAME workspace: trail comment, approve it, success", async () => {
+  const pendingCr = {
+    id: PENDING_ID,
+    status: "REQUESTED",
+    segment: { name: "RUM100Perc_Workspaces", keys: ["555111"] },
+  };
+  const calls = installFetchMock({ createStatus: 423, pendingCr });
+  const res = mockRes();
+
+  await handleWebhook(mockReq(automationBody("same-ws-task", "555111"), TOKEN), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.handled, "pending");
+  assert.equal(res.payload.sameWorkspace, true);
+  assert.equal(res.payload.approved, true);
+
+  assert.ok(
+    calls.some((c) => c.method === "PUT" && c.url.includes(`/changeRequests/${PENDING_ID}`)),
+    "approves the pending CR",
+  );
+  const comments = calls
+    .filter((c) => c.url.includes("/comment"))
+    .map((c) => JSON.parse(c.body).comment_text);
+  assert.ok(comments.some((t) => /already exists/i.test(t)), "posts the trail comment");
+  assert.ok(comments.some((t) => /APPROVED/.test(t)), "posts the success comment");
+});
+
+test("423 pending CR for DIFFERENT workspace: approve blocker + retry guidance", async () => {
+  const pendingCr = {
+    id: PENDING_ID,
+    status: "REQUESTED",
+    segment: { name: "RUM100Perc_Workspaces", keys: ["999999"] },
+  };
+  const calls = installFetchMock({ createStatus: 423, pendingCr });
+  const res = mockRes();
+
+  await handleWebhook(mockReq(automationBody("diff-ws-task", "111111"), TOKEN), res);
+
+  assert.equal(res.payload.sameWorkspace, false);
+  assert.equal(res.payload.approved, true);
+  assert.ok(
+    calls.some((c) => c.method === "PUT" && c.url.includes(`/changeRequests/${PENDING_ID}`)),
+    "approves the blocking CR",
+  );
+  const comments = calls
+    .filter((c) => c.url.includes("/comment"))
+    .map((c) => JSON.parse(c.body).comment_text);
+  assert.ok(comments.some((t) => /another Workspace/i.test(t)), "trail mentions another workspace");
+  assert.ok(comments.some((t) => /Retry RUM/i.test(t)), "guides retry via Retry RUM");
 });
