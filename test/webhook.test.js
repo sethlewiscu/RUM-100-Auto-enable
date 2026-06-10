@@ -136,9 +136,10 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(comment, "should post a result comment");
   assert.match(JSON.parse(comment.body).comment_text, /APPROVED/);
 
-  // Create uses SPLIT_API_TOKEN; approve uses the distinct SPLIT_APPROVE_TOKEN.
-  assert.equal(create.headers.Authorization, "Bearer sat.test");
-  assert.equal(approve.headers.Authorization, "Bearer sat.approve");
+  // Create uses SPLIT_API_TOKEN; approve uses the distinct SPLIT_APPROVE_TOKEN,
+  // both via the x-api-key header.
+  assert.equal(create.headers["x-api-key"], "sat.test");
+  assert.equal(approve.headers["x-api-key"], "sat.approve");
 });
 
 test("race: inline value empty, re-fetch finds the key, then proceeds", async () => {
