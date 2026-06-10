@@ -38,10 +38,9 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
 1. Configure these variables — on Replit add them as **Secrets**; locally put
    them in a gitignored `.env`:
    - `SPLIT_API_TOKEN` — Harness FME (Split) Admin API key used to **create** the CR.
-   - `SPLIT_APPROVE_TOKEN` — a **second** key used to **approve** the CR (a `sat.`
-     Admin key or a Harness `pat.`). FME blocks the creating key from approving, so
-     this must be a *different* key registered as an approver (see below).
-     Tokens are sent via the `x-api-key` header.
+   - `SPLIT_APPROVE_TOKEN` — a **second** key used to **approve** the CR. FME blocks
+     the creating key from approving, so this must be a *different* key registered
+     as an approver (see below). Tokens are sent as `Authorization: Bearer`.
    - `SPLIT_WS_ID`, `SPLIT_ENV_ID`, `SPLIT_SEGMENT_NAME`, `SPLIT_APPROVERS`.
    - `CLICKUP_API_TOKEN` — to post the result comment.
    - `CLICKUP_BASE_URL` — defaults to staging; set to prod when needed.
@@ -84,11 +83,15 @@ Harness FME does not allow the key that **submits** a change request to also
 3. Set it as `SPLIT_APPROVE_TOKEN`. If it's unset or equals `SPLIT_API_TOKEN`,
    the approve step returns 401 (and the server logs a warning at boot).
 
-All FME Admin API calls authenticate with the **`x-api-key`** header (Harness's
-current scheme; plain `Authorization: Bearer` is the legacy form and is rejected
-for Harness `pat.` tokens). A 401 *with* a `transactionId` means the token is
-accepted but not a registered approver; *without* one means the credential itself
-was rejected.
+FME Admin API calls authenticate with **`Authorization: Bearer <token>`** (the
+structure that works in the legacy Zapier flow):
+- **Create:** `POST …/changeRequests/ws/{ws}/environments/{env}` with the `sat.`
+  token (`SPLIT_API_TOKEN`).
+- **Approve:** `PUT …/changeRequests/{crId}` with the `pat.` token
+  (`SPLIT_APPROVE_TOKEN`).
+
+A 401 *with* a `transactionId` means the token is accepted but not a registered
+approver; *without* one means the credential itself was rejected.
 
 See [FME approval flows](https://developer.harness.io/docs/feature-management-experimentation/api/approvals/).
 
