@@ -10,7 +10,9 @@ async function splitFetch(path, options = {}, token) {
   const res = await fetch(`${split.baseUrl}${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${token || split.apiToken}`,
+      // Harness FME requires the API token in an x-api-key header (works for
+      // both sat. Admin keys and pat. Harness tokens on these endpoints).
+      "x-api-key": token || split.apiToken,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },

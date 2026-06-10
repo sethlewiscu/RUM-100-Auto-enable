@@ -15,14 +15,20 @@ function optional(name, fallback = "") {
   return value === undefined || value === null ? fallback : value.trim();
 }
 
+// Tokens are sent in the x-api-key header, so strip a stray leading "Bearer "
+// (case-insensitive) and surrounding whitespace from a pasted value.
+function cleanToken(value) {
+  return String(value || "").trim().replace(/^Bearer\s+/i, "").trim();
+}
+
 function buildConfig() {
   const config = {
     split: {
-      apiToken: required("SPLIT_API_TOKEN"),
+      apiToken: cleanToken(required("SPLIT_API_TOKEN")),
       // Harness FME blocks the key that creates a change request from approving
       // it — approval must use a different Admin API key that is registered as an
       // approver on the environment. Used only for the approve PUT.
-      approveToken: optional("SPLIT_APPROVE_TOKEN", ""),
+      approveToken: cleanToken(optional("SPLIT_APPROVE_TOKEN", "")),
       wsId: required("SPLIT_WS_ID"),
       envId: required("SPLIT_ENV_ID"),
       segmentName: optional("SPLIT_SEGMENT_NAME", "RUM100Perc_Workspaces"),
