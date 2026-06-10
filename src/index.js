@@ -19,6 +19,13 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 // The ClickUp Automation posts to the bare domain, so the handler lives at root.
 app.use("/", webhookRouter);
 
+// Non-secret diagnostic: token *type* prefix only (e.g. "sat.", "pat."), never
+// the secret — makes the deployed auth config verifiable in the Replit console.
+const typePrefix = (t) => (t ? `${String(t).split(".")[0]}.` : "(unset)");
+
 app.listen(config.port, () => {
   console.log(`[boot] RUM auto-approve server listening on port ${config.port}`);
+  console.log(
+    `[boot] Split auth=Bearer | create token ${typePrefix(config.split.apiToken)} | approve token ${typePrefix(config.split.approveToken)}`,
+  );
 });

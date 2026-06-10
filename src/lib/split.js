@@ -10,9 +10,9 @@ async function splitFetch(path, options = {}, token) {
   const res = await fetch(`${split.baseUrl}${path}`, {
     ...options,
     headers: {
-      // Harness FME requires the API token in an x-api-key header (works for
-      // both sat. Admin keys and pat. Harness tokens on these endpoints).
-      "x-api-key": token || split.apiToken,
+      // Matches the working Zapier structure: sat. create token and pat. approve
+      // token are both sent as Authorization: Bearer.
+      Authorization: `Bearer ${token || split.apiToken}`,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
