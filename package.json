@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
+<<<<<<< HEAD
     "start": "npm install --prefer-offline && node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test"

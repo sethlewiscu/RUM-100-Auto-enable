@@ -18,6 +18,7 @@ function setEnv() {
   process.env.WEBHOOK_AUTH_TOKEN = TOKEN;
   process.env.WORKSPACE_ID_FIELD = "Workspace ID [Perf]";
   process.env.RERUN_FIELD = "rf1"; // match the rerun field by id (see rerunBody)
+  process.env.APPROVED_FIELD = "af1"; // "RUM approved" checkbox, matched by id
   process.env.WORKSPACE_RETRY_DELAY_MS = "0"; // instant retries in tests
   process.env.WORKSPACE_MAX_RETRIES = "3";
   resetConfig();
@@ -136,6 +137,13 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(comment, "should post a result comment");
   assert.match(JSON.parse(comment.body).comment_text, /APPROVED/);
 
+  // Checks the "RUM approved" custom field on the task after approval.
+  const approvedField = calls.find(
+    (c) => c.method === "POST" && c.url.includes("/task/868djdyr0/field/af1"),
+  );
+  assert.ok(approvedField, "should check the approved field");
+  assert.equal(JSON.parse(approvedField.body).value, true);
+
   // Create uses SPLIT_API_TOKEN; approve uses the distinct SPLIT_APPROVE_TOKEN,
   // both sent as Authorization: Bearer.
   assert.equal(create.headers.Authorization, "Bearer sat.test");
@@ -245,6 +253,11 @@ test("423 pending CR for SAME workspace: trail comment, approve it, success", as
     .map((c) => JSON.parse(c.body).comment_text);
   assert.ok(comments.some((t) => /already exists/i.test(t)), "posts the trail comment");
   assert.ok(comments.some((t) => /APPROVED/.test(t)), "posts the success comment");
+
+  assert.ok(
+    calls.some((c) => c.method === "POST" && c.url.includes("/task/same-ws-task/field/af1")),
+    "checks the approved field for this workspace",
+  );
 });
 
 test("423 pending CR for DIFFERENT workspace: approve blocker + retry guidance", async () => {
@@ -269,4 +282,10 @@ test("423 pending CR for DIFFERENT workspace: approve blocker + retry guidance",
     .map((c) => JSON.parse(c.body).comment_text);
   assert.ok(comments.some((t) => /another Workspace/i.test(t)), "trail mentions another workspace");
   assert.ok(comments.some((t) => /Retry RUM/i.test(t)), "guides retry via Retry RUM");
+
+  // This task's RUM isn't done (it just unblocked the queue), so leave it unchecked.
+  assert.ok(
+    !calls.some((c) => c.method === "POST" && c.url.includes("/task/diff-ws-task/field/af1")),
+    "does NOT check the approved field for a different workspace",
+  );
 });

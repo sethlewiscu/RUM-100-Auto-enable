@@ -2,6 +2,8 @@
 // In production (Replit) these come from Secrets. Locally they come from a
 // .env file loaded via `node --env-file=.env` (Node 20+) or the platform.
 
+import { log } from "./logger.js";
+
 function required(name) {
   const value = process.env[name];
   if (value === undefined || value === null || value.trim() === "") {
@@ -15,8 +17,9 @@ function optional(name, fallback = "") {
   return value === undefined || value === null ? fallback : value.trim();
 }
 
-// Tokens are sent in the x-api-key header, so strip a stray leading "Bearer "
-// (case-insensitive) and surrounding whitespace from a pasted value.
+// Tokens are sent as "Authorization: Bearer <token>", so strip a stray leading
+// "Bearer " (case-insensitive) and surrounding whitespace from a pasted value to
+// avoid a doubled "Bearer Bearer ...".
 function cleanToken(value) {
   return String(value || "").trim().replace(/^Bearer\s+/i, "").trim();
 }
@@ -58,6 +61,9 @@ function buildConfig() {
     // dedupe guard). The server unchecks it after processing. Identified by
     // ClickUp field id (preferred) or name.
     rerunField: optional("RERUN_FIELD", "4c9e4cde-23e4-4a18-bef3-fa8f52a29f01"),
+    // Checkbox custom field the server checks once this workspace's RUM has been
+    // approved. Identified by ClickUp field id (preferred) or name.
+    approvedField: optional("APPROVED_FIELD", "7f8e2598-dd56-4d6e-a187-f891b5ce0e8b"),
     // When the inline payload's workspace-ID field is empty (the Automation
     // snapshot raced ahead of the auto-populated value), wait and re-fetch the
     // task this many times, sleeping retryDelayMs between attempts.
@@ -72,7 +78,7 @@ function buildConfig() {
     throw new Error("SPLIT_APPROVERS must contain at least one email.");
   }
   if (!config.split.approveToken || config.split.approveToken === config.split.apiToken) {
-    console.warn(
+    log.warn(
       "[config] SPLIT_APPROVE_TOKEN is unset or equal to SPLIT_API_TOKEN — change-request approval will 401. Set a distinct Admin API key registered as an approver.",
     );
   }

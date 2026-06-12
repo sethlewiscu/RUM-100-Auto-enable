@@ -19,6 +19,7 @@ ClickUp Automation: Task created (3 source lists)
         wait + GET /task/{id} and re-read, up to WORKSPACE_MAX_RETRIES times
   → POST Split "Add Key" change request                 → CR id
   → PUT  Split "Approve CR" with that id                → APPROVED
+  → check the "RUM approved" custom field on the task
   → POST result comment back on the ClickUp task
 ```
 
@@ -51,13 +52,66 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
      tuning (defaults `3000` / `3`).
    - `RERUN_FIELD` — "Retry RUM" checkbox field, by **field id** (preferred) or
      name.
+   - `APPROVED_FIELD` — "RUM approved" checkbox field the server checks once this
+     workspace's RUM is approved, by **field id** (preferred) or name.
 
 Custom fields are matched by ClickUp **field id** first, then name — prefer ids
 since a field can be renamed without changing its id.
 2. `npm install`
 3. Run:
-   - Local: `node --env-file=.env src/index.js`
+   - Local (dev): `npm run dev` — loads `.env`, watches for changes, and sets
+     `LOG_LEVEL=debug` for verbose request/response/stack logging.
+   - Local (plain): `node --env-file=.env src/index.js`.
    - Replit: `npm start` (Secrets are injected automatically).
+
+## Logging
+
+Logging goes through a small zero-dependency logger (`src/lib/logger.js`):
+- Level is set by `LOG_LEVEL` (`debug|info|warn|error`, default `info`); `npm run
+  dev` uses `debug`.
+- Errors are logged with their **full stack** plus any enriched props — for Split
+  failures that means `status`, the FME response `body`, the request `method`/`path`,
+  and the captured response `headers` (incl. `transactionId`). This is what makes a
+  401 diagnosable.
+- Secrets are never logged — only the token **type** prefix (`sat.`/`pat.`).
+- At `debug`, the **full inbound payload** is logged on each delivery, so the real
+  ClickUp Automation payload is visible/copyable in your terminal.
+
+## Local live debugging (ngrok)
+
+To watch the **live** ClickUp Automation fail in your own terminal — with the real
+payload and full stack traces — run the server locally and expose it with a public
+**HTTPS** tunnel that ClickUp will accept:
+
+1. **Install + auth ngrok** (one-time): `brew install ngrok`, then
+   `ngrok config add-authtoken <token>` (from a free ngrok account).
+2. **Run the server**: `npm run dev` (loads `.env`, `LOG_LEVEL=debug`, port 3000).
+3. **Start the tunnel**: `ngrok http 3000` and copy the forwarding URL,
+   `https://<id>.ngrok-free.app`.
+4. **Repoint the live Automation** (ClickUp UI): in the Automation whose **Call
+   webhook** action targets the Replit URL, change the URL to the ngrok HTTPS URL.
+   Keep the `X-Auth-Token` header — its value must equal the local `WEBHOOK_AUTH_TOKEN`.
+   Trigger a real RUM request.
+5. Read the **real payload + Split request/response + full 401 stack** in the
+   `npm run dev` terminal. ngrok's inspector at <http://127.0.0.1:4040> shows each raw
+   delivery. **Restore the Automation URL to Replit when done.**
+
+**Gotchas:**
+- **`OAUTH_194 "Specified URL not allowed"`** means the endpoint wasn't a public HTTPS
+  URL. ClickUp can't reach `localhost` and can't whitelist IPs, so `http://localhost`
+  is rejected — use the ngrok **HTTPS** URL.
+- **Repoint the Automation, not an API webhook.** Only the Automation "Call webhook"
+  sends the inline-task `payload` this server parses. A `/api/v2/webhook/{id}` entry
+  sends `event`/`task_id`/`history_items` (no task) and will just log "no task in
+  payload" — it won't drive the Split flow.
+
+**Reading the result:** because the local run uses *your* `.env`, the outcome is
+itself diagnostic. If approval **succeeds locally but fails on Replit**, the Replit
+`SPLIT_APPROVE_TOKEN` Secret is wrong/stale. If it **fails locally too**, the
+enriched body + `transactionId` distinguish a rejected credential from a
+token-that-isn't-a-registered-approver (see the 401 note below). A *successful* run
+creates/approves a **real** CR and posts a **real** task comment via your local
+`.env` (staging) — same as production.
 
 ## ClickUp Automation
 

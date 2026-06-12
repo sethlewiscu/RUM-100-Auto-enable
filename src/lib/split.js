@@ -1,18 +1,35 @@
 import { getConfig } from "./config.js";
+import { log, tokenType } from "./logger.js";
 
 // Wrapper around the two Split.io (Harness) Segment change-request endpoints
 // from the Postman collection:
 //   1. createSegmentKeyCR  -> "Segment - Add Key API"
 //   2. approveCR           -> "Segment - Approve Segment CR"
 
+// Response headers worth capturing on failure — FME's transactionId is the key
+// 401 discriminator (a 401 *with* one means the token is accepted but isn't a
+// registered approver; *without* one means the credential itself was rejected).
+const INTERESTING_HEADERS = ["transactionid", "x-request-id", "www-authenticate"];
+
 async function splitFetch(path, options = {}, token) {
   const { split } = getConfig();
+  const method = options.method || "GET";
+  const effectiveToken = token || split.apiToken;
+
+  // Pre-flight (debug): which token *type* actually went out, so we can confirm
+  // the approve PUT used the approve token — never logs the secret.
+  log.debug(`Split ${method} ${path}`, {
+    url: `${split.baseUrl}${path}`,
+    auth: `Bearer ${tokenType(effectiveToken)}`,
+    bodyKeys: options.body ? Object.keys(JSON.parse(options.body)) : [],
+  });
+
   const res = await fetch(`${split.baseUrl}${path}`, {
     ...options,
     headers: {
       // Matches the working Zapier structure: sat. create token and pat. approve
       // token are both sent as Authorization: Bearer.
-      Authorization: `Bearer ${token || split.apiToken}`,
+      Authorization: `Bearer ${effectiveToken}`,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
@@ -20,8 +37,15 @@ async function splitFetch(path, options = {}, token) {
 
   const text = await res.text();
   if (!res.ok) {
-    const err = new Error(`Split ${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    const err = new Error(`Split ${method} ${path} failed: ${res.status} ${text}`);
     err.status = res.status;
+    err.method = method;
+    err.path = path;
+    err.headers = {};
+    for (const name of INTERESTING_HEADERS) {
+      const value = res.headers?.get?.(name);
+      if (value) err.headers[name] = value;
+    }
     try {
       err.body = text ? JSON.parse(text) : null;
     } catch {
