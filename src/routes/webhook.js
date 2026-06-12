@@ -1,6 +1,7 @@
 import express from "express";
 import { isValidToken } from "../lib/verifyToken.js";
 import { getConfig } from "../lib/config.js";
+import { log } from "../lib/logger.js";
 import {
   addComment,
   extractWorkspaceKeys,
@@ -59,11 +60,11 @@ async function resolveWorkspaceKeys(task, taskId, workspace) {
     try {
       const fresh = await getTask(taskId);
       keys = extractWorkspaceKeys(fresh);
-      console.log(
+      log.info(
         `[webhook] task ${taskId}: re-fetch attempt ${i + 1}/${workspace.maxRetries} → ${keys.length ? `found ${keys.join(", ")}` : "still empty"}`,
       );
     } catch (err) {
-      console.warn(`[webhook] task ${taskId}: re-fetch attempt ${i + 1} failed: ${err.message}`);
+      log.warn(`[webhook] task ${taskId}: re-fetch attempt ${i + 1} failed`, { taskId, err });
     }
   }
   return keys;
@@ -73,8 +74,16 @@ export async function handleWebhook(req, res) {
   const { auth, workspace, rerunField } = getConfig();
   const rawBody = req.body instanceof Buffer ? req.body : Buffer.from("");
 
+  // Confirms the tunnel is delivering real traffic; never logs the header value.
+  log.debug("[webhook] inbound request", {
+    method: req.method,
+    path: req.originalUrl,
+    contentLength: rawBody.length,
+    authHeaderPresent: !!req.get(auth.header),
+  });
+
   if (!isValidToken(req.get(auth.header), auth.token)) {
-    console.warn(`[webhook] rejected: missing/invalid ${auth.header}`);
+    log.warn(`[webhook] rejected: missing/invalid ${auth.header}`);
     return res.status(401).json({ error: "unauthorized" });
   }
 
@@ -84,6 +93,10 @@ export async function handleWebhook(req, res) {
   } catch {
     return res.status(400).json({ error: "invalid JSON" });
   }
+
+  // Capture the full real payload locally (debug only) — this is what you read in
+  // the `npm run dev` terminal when tunneling a live ClickUp delivery via ngrok.
+  log.debug("[webhook] inbound payload", { body });
 
   // ClickUp Automation "Call webhook" embeds the full task under `payload`.
   const task = body?.payload;
@@ -96,10 +109,10 @@ export async function handleWebhook(req, res) {
   const isRerun = !!rerun?.checked;
 
   if (!isRerun && alreadyProcessed(taskId, Date.now())) {
-    console.log(`[webhook] duplicate delivery for task ${taskId}, skipping`);
+    log.info(`[webhook] duplicate delivery for task ${taskId}, skipping`);
     return res.status(200).json({ ignored: "duplicate" });
   }
-  if (isRerun) console.log(`[webhook] re-run requested for task ${taskId}`);
+  if (isRerun) log.info(`[webhook] re-run requested for task ${taskId}`);
 
   // Compute a single result, then (for re-runs) reset the checkbox BEFORE
   // responding — Cloud Run can freeze CPU once the response is sent.
@@ -109,7 +122,7 @@ export async function handleWebhook(req, res) {
     keys = await resolveWorkspaceKeys(task, taskId, workspace);
     if (keys.length === 0) {
       const msg = "❌ RUM auto-approve skipped: no workspace ID found in the configured custom field.";
-      console.warn(`[webhook] task ${taskId}: ${msg}`);
+      log.warn(`[webhook] task ${taskId}: ${msg}`);
       await safeComment(taskId, msg);
       result = { code: 200, body: { ignored: "no workspace id" } };
     } else {
@@ -118,7 +131,7 @@ export async function handleWebhook(req, res) {
       await approveCR(crId);
 
       const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment. Change request ${crId} APPROVED.`;
-      console.log(`[webhook] task ${taskId}: ${ok}`);
+      log.info(`[webhook] task ${taskId}: ${ok}`);
       await safeComment(taskId, ok);
       result = { code: 200, body: { ok: true, crId, keys } };
     }
@@ -130,7 +143,7 @@ export async function handleWebhook(req, res) {
       // Action already attempted — record failure on the task and ack (always
       // 200) so the Automation doesn't retry.
       const msg = `❌ RUM auto-approve failed: ${err.message}`;
-      console.error(`[webhook] task ${taskId}: ${msg}`);
+      log.error(`[webhook] task ${taskId}: RUM auto-approve failed`, { taskId, err });
       await safeComment(taskId, msg);
       result = { code: 200, body: { ok: false, error: err.message } };
     }
@@ -140,7 +153,7 @@ export async function handleWebhook(req, res) {
     try {
       await setCustomField(taskId, rerun.id, false);
     } catch (err) {
-      console.error(`[webhook] failed to reset ${rerunField} on task ${taskId}: ${err.message}`);
+      log.error(`[webhook] failed to reset ${rerunField} on task ${taskId}`, { taskId, err });
     }
   }
 
@@ -159,7 +172,7 @@ async function handlePendingConflict(taskId, keys, err) {
   if (!pendingId) {
     const msg =
       'ℹ️ A pending RUM request already exists for this segment. Please approve it, then re-check "Retry RUM" to retry this task.';
-    console.warn(`[webhook] task ${taskId}: 423 but no pending id parsed`);
+    log.warn(`[webhook] task ${taskId}: 423 but no pending id parsed`, { taskId, err });
     await safeComment(taskId, msg);
     return { code: 200, body: { handled: "pending", pendingId: null } };
   }
@@ -170,13 +183,13 @@ async function handlePendingConflict(taskId, keys, err) {
     const pendingKeys = extractCrKeys(pendingCr);
     sameWorkspace = keys.some((k) => pendingKeys.includes(k));
   } catch (e) {
-    console.warn(`[webhook] task ${taskId}: could not read pending CR ${pendingId}: ${e.message}`);
+    log.warn(`[webhook] task ${taskId}: could not read pending CR ${pendingId}`, { taskId, err: e });
   }
 
   const trail = sameWorkspace
     ? `ℹ️ A pending RUM request for this Workspace already exists (change request ${pendingId}). Approving it now.`
     : `ℹ️ A pending RUM request for another Workspace is already in progress (change request ${pendingId}). Approving it to unblock the queue — re-check "Retry RUM" to process this request.`;
-  console.log(`[webhook] task ${taskId}: ${trail}`);
+  log.info(`[webhook] task ${taskId}: ${trail}`);
   await safeComment(taskId, trail);
 
   try {
@@ -184,12 +197,12 @@ async function handlePendingConflict(taskId, keys, err) {
     const ok = sameWorkspace
       ? `✅ RUM 100% approved for this Workspace. Change request ${pendingId} APPROVED.`
       : `✅ Approved the blocking change request ${pendingId}. Re-check "Retry RUM" on this task to process this Workspace.`;
-    console.log(`[webhook] task ${taskId}: ${ok}`);
+    log.info(`[webhook] task ${taskId}: ${ok}`);
     await safeComment(taskId, ok);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
   } catch (e) {
     const msg = `❌ Found pending change request ${pendingId} but failed to approve it: ${e.message}`;
-    console.error(`[webhook] task ${taskId}: ${msg}`);
+    log.error(`[webhook] task ${taskId}: failed to approve pending change request ${pendingId}`, { taskId, err: e });
     await safeComment(taskId, msg);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: false } };
   }
@@ -199,6 +212,6 @@ async function safeComment(taskId, text) {
   try {
     await addComment(taskId, text);
   } catch (err) {
-    console.error(`[webhook] failed to post comment on task ${taskId}: ${err.message}`);
+    log.error(`[webhook] failed to post comment on task ${taskId}`, { taskId, err });
   }
 }
