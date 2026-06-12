@@ -2,7 +2,9 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { resetConfig } from "../src/lib/config.js";
-import { handleWebhook } from "../src/routes/webhook.js";
+import { handleWebhook, formatApprovalDate } from "../src/routes/webhook.js";
+
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const TOKEN = "secret-token";
 
@@ -135,7 +137,8 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(JSON.parse(create.body).segment.keys.includes("555111"), "create body carries the key");
   assert.ok(approve, "should approve the returned CR id");
   assert.ok(comment, "should post a result comment");
-  assert.match(JSON.parse(comment.body).comment_text, /APPROVED/);
+  assert.match(JSON.parse(comment.body).comment_text, /RUM 100% approved\. Added workspace key/);
+  assert.doesNotMatch(JSON.parse(comment.body).comment_text, UUID_RE, "no UUID in comment");
 
   // Checks the "RUM approved" custom field on the task after approval.
   const approvedField = calls.find(
@@ -251,8 +254,13 @@ test("423 pending CR for SAME workspace: trail comment, approve it, success", as
   const comments = calls
     .filter((c) => c.url.includes("/comment"))
     .map((c) => JSON.parse(c.body).comment_text);
-  assert.ok(comments.some((t) => /already exists/i.test(t)), "posts the trail comment");
-  assert.ok(comments.some((t) => /APPROVED/.test(t)), "posts the success comment");
+  // No same-workspace trail anymore — only the dated approval comment.
+  assert.ok(!comments.some((t) => /already exists/i.test(t)), "no redundant trail comment");
+  assert.ok(
+    comments.some((t) => /approved for this Workspace on [A-Z][a-z]+ \d{1,2}, \d{4}\./.test(t)),
+    "posts the dated approval comment",
+  );
+  comments.forEach((t) => assert.doesNotMatch(t, UUID_RE, "no UUID in comment"));
 
   assert.ok(
     calls.some((c) => c.method === "POST" && c.url.includes("/task/same-ws-task/field/af1")),
@@ -282,10 +290,16 @@ test("423 pending CR for DIFFERENT workspace: approve blocker + retry guidance",
     .map((c) => JSON.parse(c.body).comment_text);
   assert.ok(comments.some((t) => /another Workspace/i.test(t)), "trail mentions another workspace");
   assert.ok(comments.some((t) => /Retry RUM/i.test(t)), "guides retry via Retry RUM");
+  comments.forEach((t) => assert.doesNotMatch(t, UUID_RE, "no UUID in comment"));
 
   // This task's RUM isn't done (it just unblocked the queue), so leave it unchecked.
   assert.ok(
     !calls.some((c) => c.method === "POST" && c.url.includes("/task/diff-ws-task/field/af1")),
     "does NOT check the approved field for a different workspace",
   );
+});
+
+test("formatApprovalDate renders Month D, YYYY (UTC)", () => {
+  assert.equal(formatApprovalDate(new Date("2026-06-06T12:00:00Z")), "June 6, 2026");
+  assert.equal(formatApprovalDate(new Date("2026-12-25T12:00:00Z")), "December 25, 2026");
 });

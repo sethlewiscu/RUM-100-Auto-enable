@@ -50,6 +50,24 @@ function buildCrMetadata(task) {
 // with a mock req/res (and a mocked global fetch).
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Approval date for comments, formatted like "June 6, 2026" (UTC, server clock).
+export function formatApprovalDate(date = new Date()) {
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// Strip change-request UUIDs from text we surface in comments (Split error
+// messages embed them in the request URL). Ids stay intact in logs.
+const redactIds = (s) =>
+  String(s).replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    "<id>",
+  );
+
 // Resolve the workspace key(s). The Automation snapshot can race ahead of an
 // auto-populated field, so if the inline payload has no key we wait and
 // re-fetch the task from ClickUp a few times before giving up.
@@ -130,8 +148,8 @@ export async function handleWebhook(req, res) {
       const { crId } = await createSegmentKeyCR(keys, meta);
       await approveCR(crId);
 
-      const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment. Change request ${crId} APPROVED.`;
-      log.info(`[webhook] task ${taskId}: ${ok}`);
+      const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment.`;
+      log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
       await safeComment(taskId, ok);
       await markApproved(taskId);
       result = { code: 200, body: { ok: true, crId, keys } };
@@ -143,7 +161,7 @@ export async function handleWebhook(req, res) {
     } else {
       // Action already attempted — record failure on the task and ack (always
       // 200) so the Automation doesn't retry.
-      const msg = `❌ RUM auto-approve failed: ${err.message}`;
+      const msg = `❌ RUM auto-approve failed: ${redactIds(err.message)}`;
       log.error(`[webhook] task ${taskId}: RUM auto-approve failed`, { taskId, err });
       await safeComment(taskId, msg);
       result = { code: 200, body: { ok: false, error: err.message } };
@@ -187,25 +205,29 @@ async function handlePendingConflict(taskId, keys, err) {
     log.warn(`[webhook] task ${taskId}: could not read pending CR ${pendingId}`, { taskId, err: e });
   }
 
-  const trail = sameWorkspace
-    ? `ℹ️ A pending RUM request for this Workspace already exists (change request ${pendingId}). Approving it now.`
-    : `ℹ️ A pending RUM request for another Workspace is already in progress (change request ${pendingId}). Approving it to unblock the queue — re-check "Retry RUM" to process this request.`;
-  log.info(`[webhook] task ${taskId}: ${trail}`);
-  await safeComment(taskId, trail);
+  // Same-workspace needs no trail — the approval comment (#2) below covers it.
+  // Different-workspace gets a trail so the user knows another request was
+  // approved to unblock the queue and that they should re-check Retry RUM.
+  if (!sameWorkspace) {
+    const trail =
+      'ℹ️ A pending RUM request for another Workspace is already in progress. Approving it to unblock the queue — re-check "Retry RUM" to process this request.';
+    log.info(`[webhook] task ${taskId}: ${trail}`);
+    await safeComment(taskId, trail);
+  }
 
   try {
     await approveCR(pendingId);
     const ok = sameWorkspace
-      ? `✅ RUM 100% approved for this Workspace. Change request ${pendingId} APPROVED.`
-      : `✅ Approved the blocking change request ${pendingId}. Re-check "Retry RUM" on this task to process this Workspace.`;
-    log.info(`[webhook] task ${taskId}: ${ok}`);
+      ? `✅ RUM 100% approved for this Workspace on ${formatApprovalDate()}.`
+      : 'ℹ️ Approved the blocking change request. Re-check "Retry RUM" on this task to process this Workspace.';
+    log.info(`[webhook] task ${taskId}: approved CR ${pendingId} — ${ok}`);
     await safeComment(taskId, ok);
     // Only this task's workspace counts as "approved" here. The different-
     // workspace branch just unblocked the queue, so leave its box unchecked.
     if (sameWorkspace) await markApproved(taskId);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
   } catch (e) {
-    const msg = `❌ Found pending change request ${pendingId} but failed to approve it: ${e.message}`;
+    const msg = `❌ Found a pending change request but failed to approve it: ${redactIds(e.message)}`;
     log.error(`[webhook] task ${taskId}: failed to approve pending change request ${pendingId}`, { taskId, err: e });
     await safeComment(taskId, msg);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: false } };
@@ -220,9 +242,9 @@ async function safeComment(taskId, text) {
   }
 }
 
-// Check the "RUM approved" custom field once this workspace's RUM is approved.
-// Safe by design: a failure here is logged but doesn't undo the (already done)
-// approval, mirroring safeComment.
+// Check the "RUM Sampling Enabled?" custom field once this workspace's RUM is
+// approved. Safe by design: a failure here is logged but doesn't undo the
+// (already done) approval, mirroring safeComment.
 async function markApproved(taskId) {
   const { approvedField } = getConfig();
   if (!approvedField) return;
