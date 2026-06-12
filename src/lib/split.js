@@ -75,6 +75,36 @@ export function extractCrKeys(cr) {
   return Array.isArray(keys) ? keys.map((k) => String(k).trim()).filter(Boolean) : [];
 }
 
+// Check which of `keys` are already members of the RUM segment in this
+// environment. Paginates the segment-keys endpoint and early-exits once every
+// target key is found. Returns { present, missing } (string-compared).
+export async function getSegmentKeyMembership(keys) {
+  const { split } = getConfig();
+  const target = new Set(keys.map((k) => String(k)));
+  const present = new Set();
+  const segPath = `/segments/${encodeURIComponent(split.envId)}/${encodeURIComponent(split.segmentName)}/keys`;
+
+  const limit = 200;
+  let offset = 0;
+  let total = Infinity;
+  while (offset < total && present.size < target.size) {
+    const page = await splitFetch(`${segPath}?limit=${limit}&offset=${offset}`);
+    total = Number.isFinite(page?.count) ? page.count : 0;
+    const pageKeys = Array.isArray(page?.keys) ? page.keys : [];
+    for (const entry of pageKeys) {
+      const k = String(entry?.key ?? entry);
+      if (target.has(k)) present.add(k);
+    }
+    if (pageKeys.length === 0) break; // no more data, avoid infinite loop
+    offset += pageKeys.length;
+  }
+
+  return {
+    present: [...present],
+    missing: [...target].filter((k) => !present.has(k)),
+  };
+}
+
 // Creates a change request that adds the given workspace keys to the RUM
 // segment. Returns the parsed change request, from which we pull the id.
 export async function createSegmentKeyCR(keys, { title, comment }) {

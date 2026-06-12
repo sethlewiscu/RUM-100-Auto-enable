@@ -85,7 +85,7 @@ const PENDING_ID = "7f69afb0-6450-11f1-8874-a2ae3133ca1f";
 //   createStatus – HTTP status for the create POST (use 423 to simulate a lock)
 //   pendingCr    – CR returned by GET /changeRequests/{id}
 //   pendingId    – id embedded in the 423 "details" message
-function installFetchMock({ refetchTask = {}, createStatus = 200, pendingCr = null, pendingId = PENDING_ID } = {}) {
+function installFetchMock({ refetchTask = {}, createStatus = 200, pendingCr = null, pendingId = PENDING_ID, segmentKeys = [] } = {}) {
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const method = options.method || "GET";
@@ -108,6 +108,16 @@ function installFetchMock({ refetchTask = {}, createStatus = 200, pendingCr = nu
     // Split: GET a specific CR, or PUT to approve it (.../changeRequests/{id})
     if (url.includes("/changeRequests/")) {
       return method === "GET" ? ok(pendingCr || {}) : ok({ status: "APPROVED" });
+    }
+
+    // Split: segment membership pre-check (GET .../segments/{env}/{seg}/keys)
+    if (method === "GET" && url.includes("/segments/")) {
+      return ok({
+        keys: segmentKeys.map((k) => ({ key: k })),
+        count: segmentKeys.length,
+        offset: 0,
+        limit: 200,
+      });
     }
 
     if (url.includes("/comment")) return ok({ id: "comment-1" }); // clickup comment
@@ -151,6 +161,30 @@ test("happy path: create CR, approve it, comment back", async () => {
   // both sent as Authorization: Bearer.
   assert.equal(create.headers.Authorization, "Bearer sat.test");
   assert.equal(approve.headers.Authorization, "Bearer sat.approve");
+});
+
+test("already enabled: workspace already in segment → notify, no CR", async () => {
+  const calls = installFetchMock({ segmentKeys: ["555111"] });
+  const res = mockRes();
+
+  await handleWebhook(mockReq(automationBody("enabled-task", "555111"), TOKEN), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.handled, "already-enabled");
+
+  assert.ok(!calls.some((c) => c.url.includes("/changeRequests/ws/")), "does not create a CR");
+  assert.ok(!calls.some((c) => c.method === "PUT" && c.url.includes("/changeRequests/")), "does not approve");
+
+  const comments = calls
+    .filter((c) => c.url.includes("/comment"))
+    .map((c) => JSON.parse(c.body).comment_text);
+  assert.ok(comments.some((t) => /already has 100% RUM enabled/i.test(t)), "posts already-enabled notice");
+
+  // Still reconciles the checkbox since the workspace IS enabled.
+  assert.ok(
+    calls.some((c) => c.method === "POST" && c.url.includes("/task/enabled-task/field/af1")),
+    "checks the approved field",
+  );
 });
 
 test("race: inline value empty, re-fetch finds the key, then proceeds", async () => {

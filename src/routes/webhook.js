@@ -15,6 +15,7 @@ import {
   getChangeRequest,
   parsePendingCrId,
   extractCrKeys,
+  getSegmentKeyMembership,
 } from "../lib/split.js";
 
 export const router = express.Router();
@@ -144,15 +145,33 @@ export async function handleWebhook(req, res) {
       await safeComment(taskId, msg);
       result = { code: 200, body: { ignored: "no workspace id" } };
     } else {
-      const meta = buildCrMetadata(task);
-      const { crId } = await createSegmentKeyCR(keys, meta);
-      await approveCR(crId);
+      // Skip the API call if the workspace is already in the segment. Adding an
+      // existing key doesn't 423, so without this we'd create+approve a no-op CR
+      // and falsely report success. Best-effort: a failed check proceeds to create.
+      let missing = keys;
+      try {
+        ({ missing } = await getSegmentKeyMembership(keys));
+      } catch (e) {
+        log.warn(`[webhook] task ${taskId}: segment membership check failed; proceeding`, { taskId, err: e });
+      }
 
-      const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment.`;
-      log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
-      await safeComment(taskId, ok);
-      await markApproved(taskId);
-      result = { code: 200, body: { ok: true, crId, keys } };
+      if (missing.length === 0) {
+        const msg = "ℹ️ This Workspace already has 100% RUM enabled — no action needed.";
+        log.info(`[webhook] task ${taskId}: ${msg}`);
+        await safeComment(taskId, msg);
+        await markApproved(taskId);
+        result = { code: 200, body: { handled: "already-enabled", keys } };
+      } else {
+        const meta = buildCrMetadata(task);
+        const { crId } = await createSegmentKeyCR(missing, meta);
+        await approveCR(crId);
+
+        const ok = `✅ RUM 100% approved. Added workspace key(s) ${missing.join(", ")} to the segment.`;
+        log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
+        await safeComment(taskId, ok);
+        await markApproved(taskId);
+        result = { code: 200, body: { ok: true, crId, keys: missing } };
+      }
     }
   } catch (err) {
     if (err.status === 423) {
