@@ -61,6 +61,9 @@ function buildConfig() {
     // dedupe guard). The server unchecks it after processing. Identified by
     // ClickUp field id (preferred) or name.
     rerunField: optional("RERUN_FIELD", "4c9e4cde-23e4-4a18-bef3-fa8f52a29f01"),
+    // Checkbox custom field the server checks once this workspace's RUM has been
+    // approved. Identified by ClickUp field id (preferred) or name.
+    approvedField: optional("APPROVED_FIELD", "7f8e2598-dd56-4d6e-a187-f891b5ce0e8b"),
     // When the inline payload's workspace-ID field is empty (the Automation
     // snapshot raced ahead of the auto-populated value), wait and re-fetch the
     // task this many times, sleeping retryDelayMs between attempts.

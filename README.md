@@ -19,6 +19,7 @@ ClickUp Automation: Task created (3 source lists)
         wait + GET /task/{id} and re-read, up to WORKSPACE_MAX_RETRIES times
   → POST Split "Add Key" change request                 → CR id
   → PUT  Split "Approve CR" with that id                → APPROVED
+  → check the "RUM approved" custom field on the task
   → POST result comment back on the ClickUp task
 ```
 
@@ -51,6 +52,8 @@ taken, so when the inline workspace ID is empty the server re-fetches the task
      tuning (defaults `3000` / `3`).
    - `RERUN_FIELD` — "Retry RUM" checkbox field, by **field id** (preferred) or
      name.
+   - `APPROVED_FIELD` — "RUM approved" checkbox field the server checks once this
+     workspace's RUM is approved, by **field id** (preferred) or name.
 
 Custom fields are matched by ClickUp **field id** first, then name — prefer ids
 since a field can be renamed without changing its id.
