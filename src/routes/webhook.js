@@ -133,6 +133,7 @@ export async function handleWebhook(req, res) {
       const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment. Change request ${crId} APPROVED.`;
       log.info(`[webhook] task ${taskId}: ${ok}`);
       await safeComment(taskId, ok);
+      await markApproved(taskId);
       result = { code: 200, body: { ok: true, crId, keys } };
     }
   } catch (err) {
@@ -199,6 +200,9 @@ async function handlePendingConflict(taskId, keys, err) {
       : `✅ Approved the blocking change request ${pendingId}. Re-check "Retry RUM" on this task to process this Workspace.`;
     log.info(`[webhook] task ${taskId}: ${ok}`);
     await safeComment(taskId, ok);
+    // Only this task's workspace counts as "approved" here. The different-
+    // workspace branch just unblocked the queue, so leave its box unchecked.
+    if (sameWorkspace) await markApproved(taskId);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
   } catch (e) {
     const msg = `❌ Found pending change request ${pendingId} but failed to approve it: ${e.message}`;
@@ -213,5 +217,18 @@ async function safeComment(taskId, text) {
     await addComment(taskId, text);
   } catch (err) {
     log.error(`[webhook] failed to post comment on task ${taskId}`, { taskId, err });
+  }
+}
+
+// Check the "RUM approved" custom field once this workspace's RUM is approved.
+// Safe by design: a failure here is logged but doesn't undo the (already done)
+// approval, mirroring safeComment.
+async function markApproved(taskId) {
+  const { approvedField } = getConfig();
+  if (!approvedField) return;
+  try {
+    await setCustomField(taskId, approvedField, true);
+  } catch (err) {
+    log.error(`[webhook] failed to check approved field on task ${taskId}`, { taskId, err });
   }
 }
