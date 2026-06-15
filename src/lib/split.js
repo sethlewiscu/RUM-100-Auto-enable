@@ -11,6 +11,41 @@ import { log, tokenType } from "./logger.js";
 // registered approver; *without* one means the credential itself was rejected).
 const INTERESTING_HEADERS = ["transactionid", "x-request-id", "www-authenticate"];
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Retry a Split API operation with exponential backoff. On failure, retries up to
+// maxRetries times with delays (0ms, then initialDelayMs * 1, * 2, etc.).
+// Returns { success: true, result } or { success: false, lastError, attempts }.
+// shouldRetry(err) is optional: if returns false, the error is re-thrown immediately.
+async function withRetry(fn, label, { maxRetries = 3, initialDelayMs, shouldRetry = () => true } = {}) {
+  // Allow override via env for tests; default to 30 seconds in production
+  if (initialDelayMs === undefined) {
+    initialDelayMs = Number(process.env.SPLIT_RETRY_DELAY_MS ?? 30000);
+  }
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    try {
+      const result = await fn();
+      if (attempt > 1) log.info(`[split] ${label} succeeded on attempt ${attempt}`);
+      return { success: true, result };
+    } catch (err) {
+      lastError = err;
+      // If shouldRetry returns false, don't retry — throw immediately
+      if (!shouldRetry(err)) {
+        throw err;
+      }
+      if (attempt > maxRetries) {
+        return { success: false, lastError, attempts: attempt };
+      }
+      const delay = initialDelayMs * (attempt - 1);
+      log.warn(`[split] ${label} attempt ${attempt} failed; retrying in ${delay}ms`, {
+        err: err.message,
+      });
+      if (delay > 0) await sleep(delay);
+    }
+  }
+}
+
 async function splitFetch(path, options = {}, token) {
   const { split } = getConfig();
   const method = options.method || "GET";
@@ -123,5 +158,35 @@ export function extractChangeRequestId(response) {
     response.changeRequest?.id ||
     response.cr?.id ||
     null
+  );
+}
+
+// Retry-enabled wrapper exports for the three Split operations that may be transient.
+// These wrappers use exponential backoff (0ms, 30s, 60s delays) and return
+// { success, result | lastError, attempts } instead of throwing.
+
+export async function createSegmentKeyCRWithRetry(keys, meta) {
+  // Don't retry 423 (segment locked) — let it bubble up to the 423 handler.
+  // Retry other transient errors (5xx, timeouts, etc.).
+  return withRetry(
+    () => createSegmentKeyCR(keys, meta),
+    "create segment CR",
+    {
+      shouldRetry: (err) => err.status !== 423, // skip retry for 423
+    },
+  );
+}
+
+export async function approveCRWithRetry(crId, comment) {
+  return withRetry(
+    () => approveCR(crId, comment),
+    "approve CR",
+  );
+}
+
+export async function getSegmentKeyMembershipWithRetry(keys) {
+  return withRetry(
+    () => getSegmentKeyMembership(keys),
+    "check segment membership",
   );
 }
