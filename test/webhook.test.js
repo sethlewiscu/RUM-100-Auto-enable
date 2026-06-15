@@ -23,6 +23,7 @@ function setEnv() {
   process.env.APPROVED_FIELD = "af1"; // "RUM approved" checkbox, matched by id
   process.env.WORKSPACE_RETRY_DELAY_MS = "0"; // instant retries in tests
   process.env.WORKSPACE_MAX_RETRIES = "3";
+  process.env.SPLIT_RETRY_DELAY_MS = "0"; // instant retry delays in tests
   resetConfig();
 }
 

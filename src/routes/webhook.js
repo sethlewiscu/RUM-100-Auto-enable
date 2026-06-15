@@ -15,6 +15,9 @@ import {
   getChangeRequest,
   parsePendingCrId,
   extractCrKeys,
+  createSegmentKeyCRWithRetry,
+  approveCRWithRetry,
+  getSegmentKeyMembershipWithRetry,
 } from "../lib/split.js";
 
 export const router = express.Router();
@@ -145,14 +148,30 @@ export async function handleWebhook(req, res) {
       result = { code: 200, body: { ignored: "no workspace id" } };
     } else {
       const meta = buildCrMetadata(task);
-      const { crId } = await createSegmentKeyCR(keys, meta);
-      await approveCR(crId);
+      const createResult = await createSegmentKeyCRWithRetry(keys, meta);
 
-      const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment.`;
-      log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
-      await safeComment(taskId, ok);
-      await markApproved(taskId);
-      result = { code: 200, body: { ok: true, crId, keys } };
+      if (!createResult.success) {
+        const msg = "❌ Failed to create the RUM request. Check the Workspace ID, then check \"Retry RUM\" to try again.";
+        log.error(`[webhook] task ${taskId}: create failed after ${createResult.attempts} attempts`, { err: createResult.lastError });
+        await safeComment(taskId, msg);
+        result = { code: 200, body: { ok: false, error: "create failed" } };
+      } else {
+        const { crId } = createResult.result;
+        const approveResult = await approveCRWithRetry(crId);
+
+        if (!approveResult.success) {
+          const msg = "❌ Failed to approve the RUM request after multiple attempts. Check the \"Retry RUM\" field and click it again.";
+          log.error(`[webhook] task ${taskId}: approve failed after ${approveResult.attempts} attempts`, { err: approveResult.lastError });
+          await safeComment(taskId, msg);
+          result = { code: 200, body: { ok: false, error: "approve failed" } };
+        } else {
+          const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment.`;
+          log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
+          await safeComment(taskId, ok);
+          await markApproved(taskId);
+          result = { code: 200, body: { ok: true, crId, keys } };
+        }
+      }
     }
   } catch (err) {
     if (err.status === 423) {
@@ -215,23 +234,24 @@ async function handlePendingConflict(taskId, keys, err) {
     await safeComment(taskId, trail);
   }
 
-  try {
-    await approveCR(pendingId);
-    const ok = sameWorkspace
-      ? `✅ RUM 100% approved for this Workspace on ${formatApprovalDate()}.`
-      : 'ℹ️ Approved the blocking change request. Re-check "Retry RUM" on this task to process this Workspace.';
-    log.info(`[webhook] task ${taskId}: approved CR ${pendingId} — ${ok}`);
-    await safeComment(taskId, ok);
-    // Only this task's workspace counts as "approved" here. The different-
-    // workspace branch just unblocked the queue, so leave its box unchecked.
-    if (sameWorkspace) await markApproved(taskId);
-    return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
-  } catch (e) {
-    const msg = `❌ Found a pending change request but failed to approve it: ${redactIds(e.message)}`;
-    log.error(`[webhook] task ${taskId}: failed to approve pending change request ${pendingId}`, { taskId, err: e });
-    await safeComment(taskId, msg);
+  const approveResult = await approveCRWithRetry(pendingId);
+
+  if (!approveResult.success) {
+    const msg = 'The queued RUM request couldn\'t be approved after multiple attempts. Check "Retry RUM" and try again later.';
+    log.error(`[webhook] task ${taskId}: failed to approve pending CR after ${approveResult.attempts} attempts`, { err: approveResult.lastError });
+    await safeComment(taskId, `❌ ${msg}`);
     return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: false } };
   }
+
+  const ok = sameWorkspace
+    ? `✅ RUM 100% approved for this Workspace on ${formatApprovalDate()}.`
+    : 'ℹ️ Approved the blocking change request. Re-check "Retry RUM" on this task to process this Workspace.';
+  log.info(`[webhook] task ${taskId}: approved CR ${pendingId} — ${ok}`);
+  await safeComment(taskId, ok);
+  // Only this task's workspace counts as "approved" here. The different-
+  // workspace branch just unblocked the queue, so leave its box unchecked.
+  if (sameWorkspace) await markApproved(taskId);
+  return { code: 200, body: { handled: "pending", pendingId, sameWorkspace, approved: true } };
 }
 
 async function safeComment(taskId, text) {
