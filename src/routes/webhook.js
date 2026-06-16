@@ -147,10 +147,30 @@ export async function handleWebhook(req, res) {
       await safeComment(taskId, msg);
       result = { code: 200, body: { ignored: "no workspace id" } };
     } else {
-      const meta = buildCrMetadata(task);
-      const createResult = await createSegmentKeyCRWithRetry(keys, meta);
+      // Check if workspace(s) are already in the segment. If so, skip creation.
+      let missing = keys;
+      try {
+        const membershipResult = await getSegmentKeyMembershipWithRetry(keys);
+        if (membershipResult.success) {
+          missing = membershipResult.result.missing;
+        }
+      } catch (e) {
+        // Best-effort: if check fails, proceed with all keys
+        log.warn(`[webhook] task ${taskId}: segment membership check failed; proceeding`, { taskId, err: e });
+      }
 
-      if (!createResult.success) {
+      if (missing.length === 0) {
+        // All workspace keys are already in the segment
+        const msg = `ℹ️ This Workspace already has 100% RUM enabled as of ${formatApprovalDate()}.`;
+        log.info(`[webhook] task ${taskId}: ${msg}`);
+        await safeComment(taskId, msg);
+        await markApproved(taskId);
+        result = { code: 200, body: { handled: "already-enabled", keys } };
+      } else {
+        const meta = buildCrMetadata(task);
+        const createResult = await createSegmentKeyCRWithRetry(missing, meta);
+
+        if (!createResult.success) {
         const msg = "❌ Failed to create the RUM request. Check the Workspace ID, then check \"Retry RUM\" to try again.";
         log.error(`[webhook] task ${taskId}: create failed after ${createResult.attempts} attempts`, { err: createResult.lastError });
         await safeComment(taskId, msg);
@@ -165,12 +185,13 @@ export async function handleWebhook(req, res) {
           await safeComment(taskId, msg);
           result = { code: 200, body: { ok: false, error: "approve failed" } };
         } else {
-          const ok = `✅ RUM 100% approved. Added workspace key(s) ${keys.join(", ")} to the segment.`;
+          const ok = `✅ RUM 100% approved. Added workspace key(s) ${missing.join(", ")} to the segment.`;
           log.info(`[webhook] task ${taskId}: approved CR ${crId} — ${ok}`);
           await safeComment(taskId, ok);
           await markApproved(taskId);
           result = { code: 200, body: { ok: true, crId, keys } };
         }
+      }
       }
     }
   } catch (err) {
