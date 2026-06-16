@@ -151,12 +151,28 @@ export async function handleWebhook(req, res) {
       let missing = keys;
       try {
         const membershipResult = await getSegmentKeyMembershipWithRetry(keys);
+        log.info(`[webhook] task ${taskId}: membership check result`, {
+          taskId,
+          success: membershipResult.success,
+          present: membershipResult.result?.present,
+          missing: membershipResult.result?.missing,
+          attempts: membershipResult.attempts,
+          error: membershipResult.lastError?.message,
+          errorStatus: membershipResult.lastError?.status,
+        });
         if (membershipResult.success) {
           missing = membershipResult.result.missing;
+          log.info(`[webhook] task ${taskId}: checked ${keys.length} key(s), ${missing.length} missing`, { taskId, keys, missing });
+        } else {
+          log.warn(`[webhook] task ${taskId}: membership check failed after ${membershipResult.attempts} attempts; proceeding with all keys`, {
+            taskId,
+            error: membershipResult.lastError?.message,
+            status: membershipResult.lastError?.status,
+          });
         }
       } catch (e) {
-        // Best-effort: if check fails, proceed with all keys
-        log.warn(`[webhook] task ${taskId}: segment membership check failed; proceeding`, { taskId, err: e });
+        // Catch any unexpected errors from the retry wrapper itself
+        log.error(`[webhook] task ${taskId}: membership check threw unexpected error; proceeding`, { taskId, err: e });
       }
 
       if (missing.length === 0) {
