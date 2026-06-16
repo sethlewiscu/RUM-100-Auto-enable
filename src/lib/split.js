@@ -170,7 +170,7 @@ export async function getSegmentKeyMembership(keys) {
   const present = new Set();
   const segPath = `/segments/${encodeURIComponent(split.envId)}/${encodeURIComponent(split.segmentName)}/keys`;
 
-  const limit = 200;
+  const limit = 100;
   let offset = 0;
   let total = Infinity;
   while (offset < total && present.size < target.size) {
