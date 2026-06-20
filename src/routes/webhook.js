@@ -5,6 +5,7 @@ import { log } from "../lib/logger.js";
 import {
   addComment,
   extractWorkspaceKeys,
+  findInvalidKeys,
   getTask,
   getCheckboxField,
   setCustomField,
@@ -149,6 +150,13 @@ export async function handleWebhook(req, res) {
       await safeComment(taskId, msg);
       await flagNeedsTim(taskId);
       result = { code: 200, body: { ignored: "no workspace id" } };
+    } else if (findInvalidKeys(keys).length > 0) {
+      const invalid = findInvalidKeys(keys);
+      const msg = `❌ RUM auto-approve skipped: workspace ID must be numeric. Invalid value(s): ${invalid.join(", ")}.`;
+      log.warn(`[webhook] task ${taskId}: ${msg}`);
+      await safeComment(taskId, msg);
+      await flagNeedsTim(taskId);
+      result = { code: 200, body: { ignored: "invalid workspace id" } };
     } else {
       // Check if workspace(s) are already in the segment. If so, skip creation.
       let missing = keys;

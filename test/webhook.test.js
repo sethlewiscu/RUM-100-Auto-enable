@@ -215,6 +215,43 @@ test("no workspace id -> skip with failure comment, no Split calls", async () =>
   assert.ok(tagCall, "should add the rum-approval-problem tag");
 });
 
+test("non-numeric workspace id -> reject, flag Needs TIM, no Split calls", async () => {
+  const calls = installFetchMock();
+  const res = mockRes();
+
+  await handleWebhook(mockReq(automationBody("bad-ws-task", "TEST"), TOKEN), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.ignored, "invalid workspace id");
+  assert.ok(!calls.some((c) => c.url.includes("/changeRequests")), "no Split calls");
+
+  const comment = calls.find((c) => c.url.includes("/comment"));
+  assert.ok(comment, "posts a skip comment");
+  assert.match(JSON.parse(comment.body).comment_text, /must be numeric/);
+
+  const statusCall = calls.find(
+    (c) => c.method === "PUT" && c.url.includes("/task/bad-ws-task") && !c.url.includes("/field/"),
+  );
+  assert.ok(statusCall, "should set the Needs TIM status");
+  assert.equal(JSON.parse(statusCall.body).status, "Needs TIM");
+
+  assert.ok(
+    calls.some((c) => c.method === "POST" && c.url.includes("/task/bad-ws-task/tag/rum-approval-problem")),
+    "should add the rum-approval-problem tag",
+  );
+});
+
+test("mixed numeric + non-numeric keys -> whole request rejected", async () => {
+  const calls = installFetchMock();
+  const res = mockRes();
+
+  await handleWebhook(mockReq(automationBody("mixed-ws-task", "123456,TEST"), TOKEN), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.ignored, "invalid workspace id");
+  assert.ok(!calls.some((c) => c.url.includes("/changeRequests")), "no Split calls for any key");
+});
+
 test("re-run (Retry RUM checked): bypasses dedupe and auto-unchecks the box", async () => {
   const calls = installFetchMock();
 
