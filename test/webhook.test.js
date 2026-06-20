@@ -8,6 +8,9 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const TOKEN = "secret-token";
 
+// Visible text of a posted comment (concatenates the comment-array segments).
+const bodyText = (call) => JSON.parse(call.body).comment.map((s) => s.text).join("");
+
 function setEnv() {
   process.env.SPLIT_API_TOKEN = "sat.test";
   process.env.SPLIT_WS_ID = "ws-1";
@@ -138,9 +141,11 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(JSON.parse(create.body).segment.keys.includes("555111"), "create body carries the key");
   assert.ok(approve, "should approve the returned CR id");
   assert.ok(comment, "should post a result comment");
-  assert.match(JSON.parse(comment.body).comment_text, /RUM 100% approved\. Added workspace key/);
-  assert.match(JSON.parse(comment.body).comment_text, /^`\[AUTO-REPLY\]`/, "comment is marked auto-reply");
-  assert.doesNotMatch(JSON.parse(comment.body).comment_text, UUID_RE, "no UUID in comment");
+  assert.match(bodyText(comment), /RUM 100% approved\. Added workspace key/);
+  const marker = JSON.parse(comment.body).comment[0];
+  assert.equal(marker.text, "[AUTO-REPLY]", "comment leads with the auto-reply marker");
+  assert.equal(marker.attributes.code, true, "marker renders as inline code");
+  assert.doesNotMatch(bodyText(comment), UUID_RE, "no UUID in comment");
 
   // Checks the "RUM approved" custom field on the task after approval.
   const approvedField = calls.find(
@@ -228,7 +233,7 @@ test("non-numeric workspace id -> reject, flag Needs TIM, no Split calls", async
 
   const comment = calls.find((c) => c.url.includes("/comment"));
   assert.ok(comment, "posts a skip comment");
-  assert.match(JSON.parse(comment.body).comment_text, /must be numeric/);
+  assert.match(bodyText(comment), /must be numeric/);
 
   const statusCall = calls.find(
     (c) => c.method === "PUT" && c.url.includes("/task/bad-ws-task") && !c.url.includes("/field/"),
@@ -304,7 +309,7 @@ test("423 pending CR for SAME workspace: trail comment, approve it, success", as
   );
   const comments = calls
     .filter((c) => c.url.includes("/comment"))
-    .map((c) => JSON.parse(c.body).comment_text);
+    .map(bodyText);
   // No same-workspace trail anymore — only the dated approval comment.
   assert.ok(!comments.some((t) => /already exists/i.test(t)), "no redundant trail comment");
   assert.ok(
@@ -338,7 +343,7 @@ test("423 pending CR for DIFFERENT workspace: approve blocker + retry guidance",
   );
   const comments = calls
     .filter((c) => c.url.includes("/comment"))
-    .map((c) => JSON.parse(c.body).comment_text);
+    .map(bodyText);
   assert.ok(comments.some((t) => /another Workspace/i.test(t)), "trail mentions another workspace");
   assert.ok(comments.some((t) => /Retry RUM/i.test(t)), "guides retry via Retry RUM");
   comments.forEach((t) => assert.doesNotMatch(t, UUID_RE, "no UUID in comment"));
