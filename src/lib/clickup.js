@@ -29,10 +29,18 @@ export function getTask(taskId) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}`);
 }
 
+// Marker prepended to every public comment. The service currently posts under a
+// personal API key (not the service bot), so this makes clear the comment is
+// automated and not hand-written. Wrapped in backticks to render as inline code.
+const AUTO_REPLY_PREFIX = "`[AUTO-REPLY]`";
+
 export function addComment(taskId, commentText) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}/comment`, {
     method: "POST",
-    body: JSON.stringify({ comment_text: commentText, notify_all: false }),
+    body: JSON.stringify({
+      comment_text: `${AUTO_REPLY_PREFIX}\n${commentText}`,
+      notify_all: false,
+    }),
   });
 }
 

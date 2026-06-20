@@ -139,6 +139,7 @@ test("happy path: create CR, approve it, comment back", async () => {
   assert.ok(approve, "should approve the returned CR id");
   assert.ok(comment, "should post a result comment");
   assert.match(JSON.parse(comment.body).comment_text, /RUM 100% approved\. Added workspace key/);
+  assert.match(JSON.parse(comment.body).comment_text, /^`\[AUTO-REPLY\]`/, "comment is marked auto-reply");
   assert.doesNotMatch(JSON.parse(comment.body).comment_text, UUID_RE, "no UUID in comment");
 
   // Checks the "RUM approved" custom field on the task after approval.
