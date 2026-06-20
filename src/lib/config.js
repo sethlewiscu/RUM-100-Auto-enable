@@ -64,6 +64,10 @@ function buildConfig() {
     // Checkbox custom field the server checks once this workspace's RUM has been
     // approved. Identified by ClickUp field id (preferred) or name.
     approvedField: optional("APPROVED_FIELD", "7f8e2598-dd56-4d6e-a187-f891b5ce0e8b"),
+    // When the workspace ID can't be resolved after all retries, flag the task
+    // for a human: set this workflow status and add this tag.
+    needsTimStatus: optional("NEEDS_TIM_STATUS", "Needs TIM"),
+    problemTag: optional("RUM_PROBLEM_TAG", "rum-approval-problem"),
     // When the inline payload's workspace-ID field is empty (the Automation
     // snapshot raced ahead of the auto-populated value), wait and re-fetch the
     // task this many times, sleeping retryDelayMs between attempts.

@@ -44,6 +44,23 @@ export function setCustomField(taskId, fieldId, value) {
   );
 }
 
+// Set the task's workflow status (e.g. "Needs TIM"). The status must exist in
+// the task's list/space, otherwise ClickUp responds 400.
+export function setTaskStatus(taskId, status) {
+  return clickupFetch(`/task/${encodeURIComponent(taskId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
+// Add a tag to a task. ClickUp creates the tag if the space allows it.
+export function addTag(taskId, tagName) {
+  return clickupFetch(
+    `/task/${encodeURIComponent(taskId)}/tag/${encodeURIComponent(tagName)}`,
+    { method: "POST" },
+  );
+}
+
 // Find a custom field by id OR (case-insensitive) name and report whether it's
 // a checked checkbox. Returns { id, checked } or null when the field is absent.
 export function getCheckboxField(task, nameOrId) {

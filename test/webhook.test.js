@@ -201,6 +201,18 @@ test("no workspace id -> skip with failure comment, no Split calls", async () =>
   assert.equal(res.payload.ignored, "no workspace id");
   assert.ok(!calls.some((c) => c.url.includes("/changeRequests")), "no Split calls");
   assert.ok(calls.some((c) => c.url.includes("/comment")), "posts a skip comment");
+
+  // Flags the task for a human: sets the "Needs TIM" status and adds the tag.
+  const statusCall = calls.find(
+    (c) => c.method === "PUT" && c.url.includes("/task/no-ws-task") && !c.url.includes("/field/"),
+  );
+  assert.ok(statusCall, "should PUT the task status");
+  assert.equal(JSON.parse(statusCall.body).status, "Needs TIM");
+
+  const tagCall = calls.find(
+    (c) => c.method === "POST" && c.url.includes("/task/no-ws-task/tag/rum-approval-problem"),
+  );
+  assert.ok(tagCall, "should add the rum-approval-problem tag");
 });
 
 test("re-run (Retry RUM checked): bypasses dedupe and auto-unchecks the box", async () => {
