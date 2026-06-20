@@ -29,21 +29,10 @@ export function getTask(taskId) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}`);
 }
 
-// Every public comment is prefixed with an [AUTO-REPLY] marker: the service
-// currently posts under a personal API key (not the service bot), so this makes
-// clear the comment is automated and not hand-written. ClickUp's comment_text is
-// plain text (backticks render literally), so we use the structured `comment`
-// array — the marker as an inline-code segment, then the message as plain text.
 export function addComment(taskId, commentText) {
   return clickupFetch(`/task/${encodeURIComponent(taskId)}/comment`, {
     method: "POST",
-    body: JSON.stringify({
-      comment: [
-        { text: "[AUTO-REPLY]", attributes: { code: true } },
-        { text: `\n${commentText}`, attributes: {} },
-      ],
-      notify_all: false,
-    }),
+    body: JSON.stringify({ comment_text: commentText, notify_all: false }),
   });
 }
 
