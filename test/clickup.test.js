@@ -42,3 +42,13 @@ test("extractWorkspaceKeys reads the field from the Automation task payload", as
   };
   assert.deepEqual(extractWorkspaceKeys(multi), ["1", "2", "3"]);
 });
+
+test("findInvalidKeys flags anything that isn't all-digits", async () => {
+  const { findInvalidKeys } = await import("../src/lib/clickup.js");
+
+  assert.deepEqual(findInvalidKeys(["123456"]), []);
+  assert.deepEqual(findInvalidKeys(["007"]), []); // leading zeros are fine
+  assert.deepEqual(findInvalidKeys(["TEST"]), ["TEST"]);
+  assert.deepEqual(findInvalidKeys(["123456", "TEST"]), ["TEST"]);
+  assert.deepEqual(findInvalidKeys(["12.3", "1e5", "-5"]), ["12.3", "1e5", "-5"]);
+});

@@ -77,6 +77,12 @@ export function getCheckboxField(task, nameOrId) {
   return { id: field.id, checked };
 }
 
+// A valid Split workspace key is all digits (e.g. "123456"). Numbers in the
+// custom field arrive as strings post-trim; reject anything else.
+export function findInvalidKeys(keys) {
+  return keys.filter((k) => !/^\d+$/.test(k));
+}
+
 // Reads the workspace ID(s) from the configured custom field. Matches the field
 // by id OR (case-insensitive) name. Returns an array of non-empty string keys.
 export function extractWorkspaceKeys(task) {
