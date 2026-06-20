@@ -8,6 +8,8 @@ import {
   getTask,
   getCheckboxField,
   setCustomField,
+  setTaskStatus,
+  addTag,
 } from "../lib/clickup.js";
 import {
   createSegmentKeyCR,
@@ -145,6 +147,7 @@ export async function handleWebhook(req, res) {
       const msg = "❌ RUM auto-approve skipped: no workspace ID found in the configured custom field.";
       log.warn(`[webhook] task ${taskId}: ${msg}`);
       await safeComment(taskId, msg);
+      await flagNeedsTim(taskId);
       result = { code: 200, body: { ignored: "no workspace id" } };
     } else {
       // Check if workspace(s) are already in the segment. If so, skip creation.
@@ -309,5 +312,21 @@ async function markApproved(taskId) {
     await setCustomField(taskId, approvedField, true);
   } catch (err) {
     log.error(`[webhook] failed to check approved field on task ${taskId}`, { taskId, err });
+  }
+}
+
+// Flag a task that couldn't be auto-approved so a human (TIM) picks it up.
+// Best-effort: failures are logged but don't change the webhook response.
+async function flagNeedsTim(taskId) {
+  const { needsTimStatus, problemTag } = getConfig();
+  try {
+    await setTaskStatus(taskId, needsTimStatus);
+  } catch (err) {
+    log.error(`[webhook] failed to set "${needsTimStatus}" status on task ${taskId}`, { taskId, err });
+  }
+  try {
+    await addTag(taskId, problemTag);
+  } catch (err) {
+    log.error(`[webhook] failed to add tag "${problemTag}" on task ${taskId}`, { taskId, err });
   }
 }
